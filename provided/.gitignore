@@ -1,0 +1,7 @@
+user
+product
+stress
+*.zip
+*.tar.gz
+!.gitignore
+!README.md
