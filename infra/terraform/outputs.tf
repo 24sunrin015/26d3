@@ -61,11 +61,3 @@ output "app_s3_role_arn" {
   description = "product SA에 붙일 IRSA 역할 ARN"
   value       = module.irsa_app_s3.iam_role_arn
 }
-
-output "lb_controller_role_arn" {
-  value = module.irsa_lb_controller.iam_role_arn
-}
-
-output "cluster_autoscaler_role_arn" {
-  value = module.irsa_cluster_autoscaler.iam_role_arn
-}

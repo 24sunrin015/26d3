@@ -38,6 +38,7 @@ module "eks" {
 
   cluster_name           = local.cluster_name
   cluster_version        = var.cluster_version
+  region                 = var.region
   endpoint_public_access = true
 
   vpc_id     = module.vpc.vpc_id
@@ -48,44 +49,11 @@ module "eks" {
   node_max_size      = var.node_max_size
   node_desired_size  = var.node_desired_size
 }
+# 컨트롤러 IRSA + 애드온(helm)은 eks 모듈 내부(modules/eks/addons.tf)에서 관리한다.
 
 # ---------------------------------------------------------------------
-# IRSA — 파드에 IAM 권한 (액세스키 하드코딩 금지)
+# IRSA — product 앱 → S3 이미지 업로드 권한
 # ---------------------------------------------------------------------
-# (1) AWS Load Balancer Controller
-module "irsa_lb_controller" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.44"
-
-  role_name                              = "${local.prefix}-lb-controller"
-  attach_load_balancer_controller_policy = true
-
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["kube-system:aws-load-balancer-controller"]
-    }
-  }
-}
-
-# (2) Cluster Autoscaler
-module "irsa_cluster_autoscaler" {
-  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
-  version = "~> 5.44"
-
-  role_name                        = "${local.prefix}-cluster-autoscaler"
-  attach_cluster_autoscaler_policy = true
-  cluster_autoscaler_cluster_names = [local.cluster_name]
-
-  oidc_providers = {
-    main = {
-      provider_arn               = module.eks.oidc_provider_arn
-      namespace_service_accounts = ["kube-system:cluster-autoscaler"]
-    }
-  }
-}
-
-# (3) product 앱 → S3 이미지 업로드 권한
 resource "aws_iam_policy" "app_s3" {
   name        = "${local.prefix}-app-s3"
   description = "product 앱의 이미지 버킷 read/write"

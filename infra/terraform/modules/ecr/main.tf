@@ -1,9 +1,3 @@
-variable "prefix" { type = string }
-variable "repos" {
-  type    = list(string)
-  default = ["user", "product", "stress"]
-}
-
 resource "aws_ecr_repository" "this" {
   for_each = toset(var.repos)
 
@@ -33,8 +27,4 @@ resource "aws_ecr_lifecycle_policy" "this" {
       action = { type = "expire" }
     }]
   })
-}
-
-output "repository_urls" {
-  value = { for k, r in aws_ecr_repository.this : k => r.repository_url }
 }

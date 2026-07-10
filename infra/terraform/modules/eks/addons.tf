@@ -1,9 +1,41 @@
 # =====================================================================
-# 클러스터 애드온 — Terraform helm_release로 선언적 관리
-# (기존 addons.sh의 인라인 helm --set 지옥을 대체. 버전 핀 + IRSA 연결)
-# terraform apply 한 번에 설치되므로 별도 bash 단계 없음.
+# 클러스터 애드온 — helm_release로 선언적 관리 (IRSA는 이 모듈 내부에서 생성)
+# 컨트롤러 IRSA를 여기서 만들어 root와의 순환의존을 피한다.
 # =====================================================================
 
+# ---- IRSA 역할 (컨트롤러용) ----
+module "irsa_lb_controller" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.44"
+
+  role_name                              = "${var.cluster_name}-lb-controller"
+  attach_load_balancer_controller_policy = true
+
+  oidc_providers = {
+    main = {
+      provider_arn               = aws_iam_openid_connect_provider.this.arn
+      namespace_service_accounts = ["kube-system:aws-load-balancer-controller"]
+    }
+  }
+}
+
+module "irsa_cluster_autoscaler" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.44"
+
+  role_name                        = "${var.cluster_name}-cluster-autoscaler"
+  attach_cluster_autoscaler_policy = true
+  cluster_autoscaler_cluster_names = [var.cluster_name]
+
+  oidc_providers = {
+    main = {
+      provider_arn               = aws_iam_openid_connect_provider.this.arn
+      namespace_service_accounts = ["kube-system:cluster-autoscaler"]
+    }
+  }
+}
+
+# ---- helm_release ----
 # HPA 지표 공급
 resource "helm_release" "metrics_server" {
   name       = "metrics-server"
@@ -12,7 +44,7 @@ resource "helm_release" "metrics_server" {
   version    = "3.12.2"
   namespace  = "kube-system"
 
-  depends_on = [module.eks]
+  depends_on = [aws_eks_node_group.default]
 }
 
 # AWS Load Balancer Controller (TargetGroupBinding CRD 제공)
@@ -25,7 +57,7 @@ resource "helm_release" "aws_load_balancer_controller" {
 
   set {
     name  = "clusterName"
-    value = local.cluster_name
+    value = var.cluster_name
   }
   set {
     name  = "region"
@@ -33,7 +65,7 @@ resource "helm_release" "aws_load_balancer_controller" {
   }
   set {
     name  = "vpcId"
-    value = module.vpc.vpc_id
+    value = var.vpc_id
   }
   set {
     name  = "serviceAccount.create"
@@ -48,7 +80,7 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = module.irsa_lb_controller.iam_role_arn
   }
 
-  depends_on = [module.eks]
+  depends_on = [aws_eks_node_group.default]
 }
 
 # Cluster Autoscaler (노드 스케일 — 비용 관리 핵심)
@@ -61,7 +93,7 @@ resource "helm_release" "cluster_autoscaler" {
 
   set {
     name  = "autoDiscovery.clusterName"
-    value = local.cluster_name
+    value = var.cluster_name
   }
   set {
     name  = "awsRegion"
@@ -85,5 +117,5 @@ resource "helm_release" "cluster_autoscaler" {
     value = "2m"
   }
 
-  depends_on = [module.eks]
+  depends_on = [aws_eks_node_group.default]
 }

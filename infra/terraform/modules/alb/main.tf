@@ -1,11 +1,9 @@
-variable "prefix" { type = string }
-variable "vpc_id" { type = string }
-variable "public_subnets" { type = list(string) }
-variable "node_sg_id" { type = string }
-
 locals {
   apps = ["user", "product", "stress"]
 }
+
+data "aws_caller_identity" "current" {}
+data "aws_elb_service_account" "main" {}
 
 # CloudFront 오리진 전용으로만 ALB 노출 (직접 IP 접근 차단)
 data "aws_ec2_managed_prefix_list" "cloudfront" {
@@ -140,9 +138,6 @@ resource "aws_s3_bucket" "logs" {
   force_destroy = true
 }
 
-data "aws_caller_identity" "current" {}
-data "aws_elb_service_account" "main" {}
-
 resource "aws_s3_bucket_public_access_block" "logs" {
   bucket                  = aws_s3_bucket.logs.id
   block_public_acls       = true
@@ -172,23 +167,4 @@ resource "aws_s3_bucket_policy" "logs" {
       }
     ]
   })
-}
-
-output "alb_arn" {
-  value = aws_lb.this.arn
-}
-output "alb_arn_suffix" {
-  value = aws_lb.this.arn_suffix
-}
-output "alb_dns_name" {
-  value = aws_lb.this.dns_name
-}
-output "target_group_arns" {
-  value = { for k, tg in aws_lb_target_group.app : k => tg.arn }
-}
-output "target_group_arn_suffixes" {
-  value = { for k, tg in aws_lb_target_group.app : k => tg.arn_suffix }
-}
-output "access_logs_bucket" {
-  value = aws_s3_bucket.logs.id
 }

@@ -1,9 +1,3 @@
-variable "prefix" { type = string }
-variable "alb_dns_name" { type = string }
-variable "s3_bucket_id" { type = string }
-variable "s3_bucket_arn" { type = string }
-variable "s3_bucket_domain_name" { type = string }
-
 locals {
   alb_origin_id = "alb-origin"
   s3_origin_id  = "s3-images-origin"
@@ -163,14 +157,4 @@ resource "aws_s3_bucket_policy" "images" {
       }
     }]
   })
-}
-
-output "distribution_domain_name" {
-  value = aws_cloudfront_distribution.this.domain_name
-}
-output "distribution_id" {
-  value = aws_cloudfront_distribution.this.id
-}
-output "distribution_arn" {
-  value = aws_cloudfront_distribution.this.arn
 }

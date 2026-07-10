@@ -1,21 +1,3 @@
-variable "name" { type = string }
-variable "cidr" { type = string }
-variable "azs" { type = list(string) }
-variable "public_subnets" { type = list(string) }
-variable "private_subnets" { type = list(string) }
-variable "single_nat_gateway" {
-  type    = bool
-  default = true
-}
-variable "cluster_name" {
-  type        = string
-  description = "EKS 서브넷 탐색 태그(kubernetes.io/cluster/<name>)용"
-}
-variable "tags" {
-  type    = map(string)
-  default = {}
-}
-
 locals {
   nat_count = var.single_nat_gateway ? 1 : length(var.public_subnets)
 }
@@ -112,17 +94,4 @@ resource "aws_route_table_association" "private" {
   subnet_id = aws_subnet.private[count.index].id
   # single NAT → 모든 프라이빗이 RT 0 공유, 아니면 AZ별 RT
   route_table_id = var.single_nat_gateway ? aws_route_table.private[0].id : aws_route_table.private[count.index].id
-}
-
-output "vpc_id" {
-  value = aws_vpc.this.id
-}
-output "public_subnets" {
-  value = aws_subnet.public[*].id
-}
-output "private_subnets" {
-  value = aws_subnet.private[*].id
-}
-output "private_route_table_ids" {
-  value = aws_route_table.private[*].id
 }

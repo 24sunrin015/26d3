@@ -1,6 +1,3 @@
-variable "prefix" { type = string }
-variable "alb_arn" { type = string }
-
 # =====================================================================
 # WAF (REGIONAL, ALB 부착) — 다층 방어
 # 설계 근거: analysis/2026-design.md §5
@@ -352,11 +349,4 @@ resource "aws_wafv2_web_acl_logging_configuration" "main" {
   log_destination_configs = [aws_cloudwatch_log_group.waf.arn]
   resource_arn            = aws_wafv2_web_acl.main.arn
   # 전량 로깅(정상/차단 모두) → 당일 악성 패턴 실시간 역산에 사용
-}
-
-output "web_acl_arn" {
-  value = aws_wafv2_web_acl.main.arn
-}
-output "log_group_name" {
-  value = aws_cloudwatch_log_group.waf.name
 }

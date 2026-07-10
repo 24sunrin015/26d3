@@ -1,21 +1,3 @@
-variable "prefix" { type = string }
-variable "identifier" { type = string } # 과제지 고정: apdev-rds-instance
-variable "vpc_id" { type = string }
-variable "subnet_ids" { type = list(string) } # private, ≥2 AZ (Multi-AZ)
-variable "instance_class" { type = string }
-variable "engine_version" { type = string }
-variable "db_name" { type = string }
-variable "username" { type = string }
-variable "password" {
-  type      = string
-  sensitive = true
-}
-variable "allocated_storage" { type = number }
-variable "ingress_sg_ids" {
-  type        = list(string)
-  description = "3306 접근 허용할 보안그룹(EKS 노드)"
-}
-
 resource "aws_db_subnet_group" "this" {
   name       = "${var.prefix}-rds-subnet-group"
   subnet_ids = var.subnet_ids
@@ -73,17 +55,4 @@ resource "aws_db_instance" "this" {
 
   # CloudWatch로 성능 관측
   performance_insights_enabled = true
-}
-
-output "identifier" {
-  value = aws_db_instance.this.identifier
-}
-output "address" {
-  value = aws_db_instance.this.address
-}
-output "port" {
-  value = aws_db_instance.this.port
-}
-output "security_group_id" {
-  value = aws_security_group.rds.id
 }

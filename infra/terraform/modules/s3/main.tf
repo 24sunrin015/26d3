@@ -1,6 +1,3 @@
-variable "prefix" { type = string }
-variable "student_id" { type = string }
-
 # 버킷 이름 전역 유일성 확보 (비번호 + 랜덤 접미)
 resource "random_id" "suffix" {
   byte_length = 3
@@ -27,14 +24,4 @@ resource "aws_s3_bucket_ownership_controls" "images" {
   rule {
     object_ownership = "BucketOwnerEnforced"
   }
-}
-
-output "bucket_id" {
-  value = aws_s3_bucket.images.id
-}
-output "bucket_arn" {
-  value = aws_s3_bucket.images.arn
-}
-output "bucket_regional_domain_name" {
-  value = aws_s3_bucket.images.bucket_regional_domain_name
 }
