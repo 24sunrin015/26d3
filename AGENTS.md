@@ -2,6 +2,7 @@
 
 > 상위 지침: [`../AGENTS.md`](../AGENTS.md). 충돌 시 우선순위: **task.md > 본 문서 > ../AGENTS.md**.
 > **채점 해석(cost ratio·availability·performance 산식, 트래픽 스펙)은 [`taskfiles/guide.md`](taskfiles/guide.md)에 상세히 있다. 작업 전 반드시 읽는다.**
+> 3과제 작업 시 절대로 상위 지침을 제외한 task3(working directory) 이외의 디렉토리 및 파일 등에 접근하지 않는다. 
 
 ---
 
@@ -20,7 +21,7 @@
 | 컴퓨팅 | EC2만. **Fargate/Lambda 전면 금지** | Lambda 부적절 사용 시 전체 0점 |
 | 오케스트레이션 | **EKS** (ECS 금지) | 항목 0점 |
 | EC2 타입 | `t3.medium` (※ 현장에서 변경 가능 — task.md 따름) | 감점/0점 |
-| DB | `db.t3.micro`, Multi-AZ, MySQL 8.0, gp3. **user·product 모두 RDS** | 성능+비용 항목 0점 |
+| DB | `db.t3.micro` (※ 현장에서 변경 가능 — task.md 따름), Multi-AZ, MySQL 8.0, gp3. **user·product 모두 RDS** | 성능+비용 항목 0점 |
 | S3 | 이미지 저장/다운로드 (2026 신규) | image 처리율 감점 |
 
 > **2025 대비 변경**: ECS→**EKS**, product DynamoDB→**RDS**, **S3 이미지 신규**. 작년 코드를 그대로 쓰지 않는다.
