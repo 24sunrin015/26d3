@@ -10,6 +10,11 @@ tf()     { terraform -chdir="$TF_DIR" output -raw "$1"; }
 tfjson() { terraform -chdir="$TF_DIR" output -json "$1"; }
 
 REGION="$(tf region)"
+CLUSTER="$(tf cluster_name)"
+
+echo "==> kubeconfig ($CLUSTER / $REGION)"
+aws eks update-kubeconfig --name "$CLUSTER" --region "$REGION" >/dev/null
+
 RDS_HOST="$(tf rds_address)"
 RDS_PORT="$(tf rds_port)"
 DBNAME="$(tf db_name)"

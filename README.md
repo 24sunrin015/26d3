@@ -24,12 +24,13 @@ export STUDENT_ID=<비번호>          # 1) 비번호 주입 (안 하면 모든 
 #    현장: 지급 바이너리를 provided/ 에 복사
 #    훈련: cd ../task3-author && make publish  (빌드 후 자동 복사)
 
-make up          # init → apply → images(ECR) → addons(컨트롤러) → deploy(앱) → 엔드포인트 출력
+make up          # init → apply(인프라+애드온) → images(ECR) → deploy(앱) → 엔드포인트 출력
 make endpoint    # 제출용 단일 엔드포인트 다시 출력
 make down        # 전체 철거 (terraform destroy)
 ```
 
-단계별로도 실행 가능: `make apply` → `make images` → `make addons` → `make deploy`.
+단계별로도 실행 가능: `make apply` → `make images` → `make deploy`.
+클러스터 애드온(LB Controller·Cluster Autoscaler·metrics-server)은 Terraform `helm_release`(`infra/terraform/addons.tf`)로 `apply` 시 함께 설치된다.
 
 ## 안전장치 (현장 사고 방지)
 
@@ -42,7 +43,7 @@ make down        # 전체 철거 (terraform destroy)
 | 경로 | 내용 |
 |---|---|
 | `infra/terraform/` | 테라폼 (VPC/EKS/RDS/S3/ECR/ALB/WAF/CloudFront/monitoring). local state |
-| `infra/k8s/` | kustomize (base + overlays/prod) + 브릿지 스크립트(addons/deploy) |
+| `infra/k8s/` | kustomize (base + overlays/prod) + deploy.sh (output→렌더→apply) |
 | `docker/` | Dockerfile + build-push.sh (provided 바이너리 → ECR) |
 | `provided/` | 앱 바이너리 (git 제외, 현장/훈련에 채움) |
 | `analysis/` | 2025 기출 분석 + 2026 설계 노트 |

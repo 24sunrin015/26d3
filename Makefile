@@ -6,7 +6,7 @@ BINARIES    := user product stress
 export TF_VAR_student_id := $(STUDENT_ID)
 
 .PHONY: check-id check-bin up down init plan apply destroy fmt validate \
-        images addons deploy k8s k8s-down endpoint
+        images deploy k8s k8s-down endpoint
 
 # ── 이중 blocker (현장 사고 방지) ─────────────────────────────
 check-id:
@@ -28,8 +28,8 @@ check-bin:
 	echo "binaries OK: $(BINARIES)"
 
 # ── 전체 플로우 ──────────────────────────────────────────────
-# apply(인프라) → images(ECR 푸시) → addons(컨트롤러) → deploy(앱)
-up: check-id check-bin init apply images addons deploy endpoint
+# apply(인프라 + 애드온 helm_release) → images(ECR 푸시) → deploy(앱)
+up: check-id check-bin init apply images deploy endpoint
 
 down: check-id
 	terraform -chdir=$(INFRA_DIR) destroy -auto-approve
@@ -57,14 +57,11 @@ validate:
 images: check-bin
 	bash docker/build-push.sh
 
-addons: check-id
-	bash infra/k8s/scripts/addons.sh
-
 deploy: check-id check-bin
 	bash infra/k8s/scripts/deploy.sh
 
-# k8s = 컨트롤러 설치 + 앱 배포 (인프라가 이미 apply된 상태 가정)
-k8s: addons deploy
+# k8s = 앱 배포 (컨트롤러는 terraform apply의 helm_release로 이미 설치됨)
+k8s: deploy
 
 k8s-down: check-id
 	kubectl delete -k $(K8S_OVERLAY) --ignore-not-found || true

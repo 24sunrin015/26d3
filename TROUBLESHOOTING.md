@@ -6,8 +6,9 @@
 
 - **apply가 느리다**: RDS Multi-AZ 생성 10~15분, EKS 클러스터 10분, CloudFront 배포 5~15분. `make up`은 이걸 다 기다린다. 경기 시작 직후 바로 `apply`부터 걸어두는 게 이득(연수메모: 3과제는 초반 세팅 승부).
 - **엔드포인트가 아직 안 뜬다**: CloudFront `Deployed` 상태까지 기다려야 200이 나온다. `make endpoint`로 주소 확인 후 `curl -I https://<domain>/healthcheck`.
-- **TargetGroupBinding이 안 먹는다**: AWS LB Controller가 먼저 떠 있어야 CRD가 존재한다. 반드시 `addons`(컨트롤러) → `deploy`(앱) 순서. `make k8s`가 이 순서로 실행.
-- **HPA가 `<unknown>`**: metrics-server 미설치/미기동. `addons.sh`가 설치하지만 기동까지 30초쯤 걸린다. `kubectl top nodes`로 확인.
+- **TargetGroupBinding이 안 먹는다**: AWS LB Controller가 먼저 떠 있어야 CRD가 존재한다. 컨트롤러는 `terraform apply`의 `helm_release`로 설치되므로, `apply` 완료 후 `deploy`(앱)를 실행하면 순서가 보장된다.
+- **HPA가 `<unknown>`**: metrics-server 미기동. `apply`의 helm_release로 설치되며 기동까지 30초쯤 걸린다. `kubectl top nodes`로 확인.
+- **helm_release가 apply 중 타임아웃/인증 실패**: helm/kubernetes provider는 `aws eks get-token`(exec)으로 인증한다. `aws` CLI가 PATH에 있고 자격증명이 클러스터 생성 계정과 같아야 한다. 노드그룹이 Ready여야 컨트롤러 파드가 스케줄된다(`depends_on = module.eks`).
 
 ## WAF (오탐이 곧 실점)
 
