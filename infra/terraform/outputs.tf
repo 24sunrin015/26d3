@@ -17,6 +17,10 @@ output "cluster_name" {
   value = module.eks.cluster_name
 }
 
+output "vpc_id" {
+  value = module.vpc.vpc_id
+}
+
 output "ecr_repository_urls" {
   description = "user/product/stress ECR URL"
   value       = module.ecr.repository_urls

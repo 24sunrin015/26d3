@@ -1,0 +1,34 @@
+# 템플릿 — make k8s가 TG ARN을 채워 targetgroupbindings.yaml 생성.
+# 파드(IP)를 Terraform이 만든 ALB 타겟그룹에 직접 등록(AWS LB Controller).
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: user
+spec:
+  serviceRef:
+    name: user
+    port: 8080
+  targetGroupARN: ${TG_USER}
+  targetType: ip
+---
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: product
+spec:
+  serviceRef:
+    name: product
+    port: 8080
+  targetGroupARN: ${TG_PRODUCT}
+  targetType: ip
+---
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: stress
+spec:
+  serviceRef:
+    name: stress
+    port: 8080
+  targetGroupARN: ${TG_STRESS}
+  targetType: ip

@@ -1,0 +1,71 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stress
+  labels: { app: stress }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: stress }
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels: { app: stress }
+    spec:
+      terminationGracePeriodSeconds: 15
+      containers:
+        - name: stress
+          image: stress-app:latest
+          ports:
+            - { name: http, containerPort: 8080 }
+          # stress는 DB 미사용(요청의 length로 부하 생성). 환경변수 불필요.
+          resources:
+            requests: { cpu: 250m, memory: 128Mi }
+            limits: { cpu: "2", memory: 512Mi }
+          readinessProbe:
+            httpGet: { path: /healthcheck, port: http }
+            initialDelaySeconds: 3
+            periodSeconds: 5
+            timeoutSeconds: 2
+          livenessProbe:
+            httpGet: { path: /healthcheck, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: stress
+  labels: { app: stress }
+spec:
+  type: ClusterIP
+  selector: { app: stress }
+  ports:
+    - { name: http, port: 8080, targetPort: http }
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: stress
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: stress
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target: { type: Utilization, averageUtilization: 70 }
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 0 # CPU 급증 즉시 대응(SLO 1.0s 보호)
+    scaleDown:
+      stabilizationWindowSeconds: 120

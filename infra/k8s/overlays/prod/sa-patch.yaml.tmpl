@@ -1,0 +1,7 @@
+# 템플릿 — product-sa에 IRSA 역할 ARN 주석 주입 (S3 업로드 권한)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: product-sa
+  annotations:
+    eks.amazonaws.com/role-arn: ${PRODUCT_ROLE_ARN}
