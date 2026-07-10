@@ -5,33 +5,18 @@
 # =====================================================================
 
 # ---------------------------------------------------------------------
-# 네트워크 (VPC) — 공식 모듈
+# 네트워크 (VPC) — 로컬 모듈 (커스터마이즈 용이)
 # ---------------------------------------------------------------------
 module "vpc" {
-  source  = "terraform-aws-modules/vpc/aws"
-  version = "~> 5.13"
+  source = "./modules/vpc"
 
-  name = "${local.prefix}-vpc"
-  cidr = var.vpc_cidr
-
-  azs             = local.azs
-  public_subnets  = local.public_subnets
-  private_subnets = local.private_subnets
-
-  enable_nat_gateway   = true
-  single_nat_gateway   = var.single_nat_gateway
-  enable_dns_hostnames = true
-  enable_dns_support   = true
-
-  # AWS Load Balancer Controller의 서브넷 자동 탐색용 태그
-  public_subnet_tags = {
-    "kubernetes.io/role/elb"                      = "1"
-    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
-  }
-  private_subnet_tags = {
-    "kubernetes.io/role/internal-elb"             = "1"
-    "kubernetes.io/cluster/${local.cluster_name}" = "shared"
-  }
+  name               = "${local.prefix}-vpc"
+  cidr               = var.vpc_cidr
+  azs                = local.azs
+  public_subnets     = local.public_subnets
+  private_subnets    = local.private_subnets
+  single_nat_gateway = var.single_nat_gateway
+  cluster_name       = local.cluster_name
 }
 
 # S3 게이트웨이 엔드포인트 — ECR 이미지 레이어(S3) 및 이미지 버킷 접근을
@@ -46,47 +31,22 @@ resource "aws_vpc_endpoint" "s3" {
 }
 
 # ---------------------------------------------------------------------
-# EKS — 공식 모듈 (관리형 노드그룹 t3.medium)
+# EKS — 로컬 모듈 (관리형 노드그룹 t3.medium, 커스터마이즈 용이)
 # ---------------------------------------------------------------------
 module "eks" {
-  source  = "terraform-aws-modules/eks/aws"
-  version = "~> 20.31"
+  source = "./modules/eks"
 
-  cluster_name    = local.cluster_name
-  cluster_version = var.cluster_version
+  cluster_name           = local.cluster_name
+  cluster_version        = var.cluster_version
+  endpoint_public_access = true
 
-  cluster_endpoint_public_access           = true
-  enable_cluster_creator_admin_permissions = true
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
 
-  vpc_id                   = module.vpc.vpc_id
-  subnet_ids               = module.vpc.private_subnets
-  control_plane_subnet_ids = module.vpc.private_subnets
-
-  cluster_addons = {
-    coredns    = {}
-    kube-proxy = {}
-    vpc-cni    = { before_compute = true }
-  }
-
-  eks_managed_node_groups = {
-    default = {
-      instance_types = [var.node_instance_type]
-      min_size       = var.node_min_size
-      max_size       = var.node_max_size
-      desired_size   = var.node_desired_size
-      capacity_type  = "ON_DEMAND"
-
-      # Cluster Autoscaler가 스케일 대상으로 탐색하도록 태그
-      tags = {
-        "k8s.io/cluster-autoscaler/enabled"               = "true"
-        "k8s.io/cluster-autoscaler/${local.cluster_name}" = "owned"
-      }
-    }
-  }
-
-  node_security_group_tags = {
-    "kubernetes.io/cluster/${local.cluster_name}" = null
-  }
+  node_instance_type = var.node_instance_type
+  node_min_size      = var.node_min_size
+  node_max_size      = var.node_max_size
+  node_desired_size  = var.node_desired_size
 }
 
 # ---------------------------------------------------------------------
@@ -243,5 +203,5 @@ module "monitoring" {
   distribution_id           = module.cloudfront.distribution_id
   alb_logs_bucket           = module.alb.access_logs_bucket
   waf_log_group             = module.waf.log_group_name
-  node_asg_names            = flatten([for ng in module.eks.eks_managed_node_groups : ng.node_group_autoscaling_group_names])
+  node_asg_names            = module.eks.node_asg_names
 }
