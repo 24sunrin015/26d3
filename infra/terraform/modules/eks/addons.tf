@@ -64,6 +64,26 @@ resource "aws_eks_addon" "cloudwatch_observability" {
   addon_name               = "amazon-cloudwatch-observability"
   service_account_role_arn = module.irsa_cw_observability[0].iam_role_arn
 
+  # 우리가 필요한 것만: Container Insights(파드 CPU/메모리) + 컨테이너 로그.
+  # agent config에 kubernetes만 지정 → Application Signals(APM/트레이스)는 미구성(우리 Go
+  # 바이너리엔 무용, ALB가 이미 RED 제공). enhanced=false로 커스텀 메트릭 비용도 절감.
+  configuration_values = jsonencode({
+    agent = {
+      config = {
+        logs = {
+          metrics_collected = {
+            kubernetes = {
+              enhanced_container_insights = false
+            }
+          }
+        }
+      }
+    }
+    containerLogs = {
+      enabled = true
+    }
+  })
+
   depends_on = [aws_eks_node_group.default]
 }
 

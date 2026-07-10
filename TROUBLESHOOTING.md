@@ -48,6 +48,7 @@
 - **Athena에서 결과 0건**: ALB 로그가 S3에 쌓이기까지 몇 분 지연. glue 테이블은 파티션 없이 전체 스캔이라 별도 `MSCK` 불필요. `alb_access_logs` 테이블에 바로 쿼리.
 - **WAF 로그**: CloudWatch Logs Insights 저장쿼리 3종(`waf-blocked-*`, `waf-user-agent-distribution`) 사용. 당일 악성 패턴 역산 → WAF 룰 보정 루프.
 - **앱 로그 & 파드 메트릭**: 기본은 **Container Insights**(`amazon-cloudwatch-observability` 애드온, `enable_container_insights=true`). 앱별 파드 CPU/메모리·재시작이 CloudWatch에 쌓이고 대시보드 하단 위젯(앱별 파드 CPU%/메모리%)에 표시 + 컨테이너 로그도 함께 수집(`/aws/containerinsights/<cluster>/application`). CI를 끄면(false) 로그는 standalone Fluent Bit로 폴백(`/aws/eks/<cluster>/workloads`).
+  - 애드온은 `configuration_values`로 **Container Insights + 로그만** 켜고 **Application Signals(APM/트레이스)는 미구성**(Go 바이너리 계측 불가 + ALB가 이미 RED 제공). `enhanced_container_insights=false`로 커스텀 메트릭 비용도 절감. 파드 CPU/mem/log만 취함.
 
 ### 경기 중 실시간 스케일 조절 워크플로
 
