@@ -46,6 +46,7 @@
 
 - **Athena에서 결과 0건**: ALB 로그가 S3에 쌓이기까지 몇 분 지연. glue 테이블은 파티션 없이 전체 스캔이라 별도 `MSCK` 불필요. `alb_access_logs` 테이블에 바로 쿼리.
 - **WAF 로그**: CloudWatch Logs Insights 저장쿼리 3종(`waf-blocked-*`, `waf-user-agent-distribution`) 사용. 당일 악성 패턴 역산 → WAF 룰 보정 루프.
+- **앱 로그**: Fluent Bit(kube-system DaemonSet, 노드당 1파드 ~50m/64Mi)가 컨테이너 stdout/stderr를 CloudWatch Logs `/aws/eks/<cluster>/workloads`로 전송. 서버 500 에러 근본원인은 여기서 확인. 로그가 안 올라오면: fluent-bit 파드 상태, SA `aws-for-fluent-bit`의 IRSA role-arn 주석, 차트 버전(0.1.34) EKS 호환 확인. (노드 로그 에이전트는 Fluent Bit 하나만 — Container Insights 등 무거운 건 미설치, 워크로드 자원 보존)
 
 ## 기타
 

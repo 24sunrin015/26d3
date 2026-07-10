@@ -56,3 +56,38 @@ resource "aws_db_instance" "this" {
   # CloudWatch로 성능 관측
   performance_insights_enabled = true
 }
+
+# =====================================================================
+# DB 테이블 자동 반영 — RDS·클러스터 ready 후 스키마만 적용
+# (데이터 적재 load_user.dump는 자동으로 넣지 않는다 — 과제지: 수동 적재)
+# private RDS라 in-cluster에 일회성 mysql 파드를 띄워 노드(=RDS 허용 SG)에서 적용.
+# 스키마 파일(tables/*.sql) 변경 시 자동 재적용.
+# =====================================================================
+resource "null_resource" "db_tables" {
+  triggers = {
+    db_instance = aws_db_instance.this.id
+    nodes       = join(",", var.node_asgs) # 노드 준비 후 실행 보장
+    user_sql    = filesha256("${path.module}/tables/user.sql")
+    product_sql = filesha256("${path.module}/tables/product.sql")
+  }
+
+  depends_on = [aws_db_instance.this]
+
+  provisioner "local-exec" {
+    interpreter = ["bash", "-c"]
+    environment = {
+      DB_PWD = var.password
+    }
+    command = <<-EOT
+      set -euo pipefail
+      aws eks update-kubeconfig --name ${var.cluster_name} --region ${var.region} >/dev/null
+      echo "[db_tables] applying schema to ${aws_db_instance.this.address} via in-cluster pod ..."
+      kubectl delete pod db-tables-init --ignore-not-found >/dev/null 2>&1 || true
+      cat "${path.module}/tables/user.sql" "${path.module}/tables/product.sql" \
+        | kubectl run db-tables-init --rm -i --restart=Never --image=mysql:8.0 \
+            --env=MYSQL_PWD="$DB_PWD" --command -- \
+            mysql -h ${aws_db_instance.this.address} -P ${aws_db_instance.this.port} -u ${var.username} ${var.db_name}
+      echo "[db_tables] done — 데이터 적재는 수동(load_user.dump)"
+    EOT
+  }
+}

@@ -112,6 +112,11 @@ module "rds" {
   password          = random_password.db.result
   allocated_storage = var.db_allocated_storage
   ingress_sg_ids    = [module.eks.node_security_group_id]
+
+  # 테이블 자동 적용(in-cluster 파드)용 — 노드 준비 후 실행되도록 node_asgs 전달
+  cluster_name = module.eks.cluster_name
+  region       = var.region
+  node_asgs    = module.eks.node_asg_names
 }
 
 resource "random_password" "db" {
