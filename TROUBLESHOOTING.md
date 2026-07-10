@@ -47,7 +47,13 @@
 
 - **Athena에서 결과 0건**: ALB 로그가 S3에 쌓이기까지 몇 분 지연. glue 테이블은 파티션 없이 전체 스캔이라 별도 `MSCK` 불필요. `alb_access_logs` 테이블에 바로 쿼리.
 - **WAF 로그**: CloudWatch Logs Insights 저장쿼리 3종(`waf-blocked-*`, `waf-user-agent-distribution`) 사용. 당일 악성 패턴 역산 → WAF 룰 보정 루프.
-- **앱 로그**: Fluent Bit(kube-system DaemonSet, 노드당 1파드 ~50m/64Mi)가 컨테이너 stdout/stderr를 CloudWatch Logs `/aws/eks/<cluster>/workloads`로 전송. 서버 500 에러 근본원인은 여기서 확인. 로그가 안 올라오면: fluent-bit 파드 상태, SA `aws-for-fluent-bit`의 IRSA role-arn 주석, 차트 버전(0.1.34) EKS 호환 확인. (노드 로그 에이전트는 Fluent Bit 하나만 — Container Insights 등 무거운 건 미설치, 워크로드 자원 보존)
+- **앱 로그 & 파드 메트릭**: 기본은 **Container Insights**(`amazon-cloudwatch-observability` 애드온, `enable_container_insights=true`). 앱별 파드 CPU/메모리·재시작이 CloudWatch에 쌓이고 대시보드 하단 위젯(앱별 파드 CPU%/메모리%)에 표시 + 컨테이너 로그도 함께 수집(`/aws/containerinsights/<cluster>/application`). CI를 끄면(false) 로그는 standalone Fluent Bit로 폴백(`/aws/eks/<cluster>/workloads`).
+
+### 경기 중 실시간 스케일 조절 워크플로
+
+- **즉시 반응(초 단위)**: `kubectl top pods -n default` / `k9s` / `kubectl get hpa -w` — CloudWatch보다 빠름(지연 없음). 스케일: `kubectl scale deploy/<app> --replicas=N` 또는 HPA min/max 조정 `kubectl edit hpa <app>`.
+- **추세·이력(분 단위)**: CloudWatch `apdev-ops` 대시보드 — 앱별 파드 CPU%/메모리%, 응답 p99, 노드 수. 어느 앱이 병목인지 보고 그 앱만 스케일.
+- **주의**: Container Insights agent DaemonSet가 노드 자원(~cpu/mem)을 먹어 노드 여유가 줄면 스케일아웃이 앞당겨져 cost ratio에 약간 불리. 비용이 빠듯하면 `-var enable_container_insights=false`로 끄고 `kubectl top`으로만 운영.
 
 ## 기타
 

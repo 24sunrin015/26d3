@@ -35,10 +35,43 @@ module "irsa_cluster_autoscaler" {
   }
 }
 
-# ---- 앱 로그 수집: Fluent Bit → CloudWatch Logs ----
-# 경량 DaemonSet(노드당 1파드, ~50m/64Mi). 컨테이너 stdout/stderr를 CloudWatch로 전송.
-# 노드 증설을 유발하지 않으므로 cost ratio에 영향 없음. IRSA로 로그 쓰기 권한만 부여.
+# ---- 실시간 파드 관측: Container Insights (amazon-cloudwatch-observability) ----
+# 경기 중 앱별 CPU/메모리·재시작을 CloudWatch 대시보드로 보며 스케일 조절.
+# 애드온이 메트릭(CW agent) + 컨테이너 로그(Fluent Bit)를 함께 수집 → CI on이면 아래
+# standalone Fluent Bit는 비활성(중복 방지). (즉각 반응은 kubectl top / k9s 병행 권장)
+module "irsa_cw_observability" {
+  source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
+  version = "~> 5.44"
+  count   = var.enable_container_insights ? 1 : 0
+
+  role_name = "${var.cluster_name}-cw-observability"
+  role_policy_arns = {
+    cw = "arn:${data.aws_partition.current.partition}:iam::aws:policy/CloudWatchAgentServerPolicy"
+  }
+
+  oidc_providers = {
+    main = {
+      provider_arn               = aws_iam_openid_connect_provider.this.arn
+      namespace_service_accounts = ["amazon-cloudwatch:cloudwatch-agent"]
+    }
+  }
+}
+
+resource "aws_eks_addon" "cloudwatch_observability" {
+  count = var.enable_container_insights ? 1 : 0
+
+  cluster_name             = aws_eks_cluster.this.name
+  addon_name               = "amazon-cloudwatch-observability"
+  service_account_role_arn = module.irsa_cw_observability[0].iam_role_arn
+
+  depends_on = [aws_eks_node_group.default]
+}
+
+# ---- 앱 로그 수집(폴백): standalone Fluent Bit → CloudWatch Logs ----
+# Container Insights가 꺼진 경우에만 사용(켜져 있으면 애드온이 로그도 수집).
+# 경량 DaemonSet(노드당 1파드, ~50m/64Mi). IRSA로 로그 쓰기 권한만 부여.
 resource "aws_iam_policy" "fluent_bit" {
+  count       = var.enable_container_insights ? 0 : 1
   name        = "${var.cluster_name}-fluent-bit"
   description = "Fluent Bit → CloudWatch Logs 쓰기"
 
@@ -62,9 +95,10 @@ resource "aws_iam_policy" "fluent_bit" {
 module "irsa_fluent_bit" {
   source  = "terraform-aws-modules/iam/aws//modules/iam-role-for-service-accounts-eks"
   version = "~> 5.44"
+  count   = var.enable_container_insights ? 0 : 1
 
   role_name        = "${var.cluster_name}-fluent-bit"
-  role_policy_arns = { logs = aws_iam_policy.fluent_bit.arn }
+  role_policy_arns = { logs = aws_iam_policy.fluent_bit[0].arn }
 
   oidc_providers = {
     main = {
@@ -75,6 +109,7 @@ module "irsa_fluent_bit" {
 }
 
 resource "helm_release" "fluent_bit" {
+  count      = var.enable_container_insights ? 0 : 1
   name       = "aws-for-fluent-bit"
   repository = "https://aws.github.io/eks-charts"
   chart      = "aws-for-fluent-bit"
@@ -91,7 +126,7 @@ resource "helm_release" "fluent_bit" {
   }
   set {
     name  = "serviceAccount.annotations.eks\\.amazonaws\\.com/role-arn"
-    value = module.irsa_fluent_bit.iam_role_arn
+    value = module.irsa_fluent_bit[0].iam_role_arn
   }
 
   # CloudWatch Logs만 사용(나머지 출력 비활성 = 경량)

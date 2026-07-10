@@ -101,6 +101,13 @@ variable "db_allocated_storage" {
   default     = 20
 }
 
+# ---- 관측성 ----
+variable "enable_container_insights" {
+  description = "Container Insights(파드 실시간 메트릭+로그). 경기 중 스케일 조절용. false면 로그는 Fluent Bit 폴백."
+  type        = bool
+  default     = true
+}
+
 # ---- CloudFront ----
 variable "enable_product_cache" {
   description = "product GET 응답 CloudFront 캐싱. 기본 false(안전). 당일 바이너리로 응답에 requestid 미에코 확인 후 true."

@@ -48,6 +48,8 @@ module "eks" {
   node_min_size      = var.node_min_size
   node_max_size      = var.node_max_size
   node_desired_size  = var.node_desired_size
+
+  enable_container_insights = var.enable_container_insights
 }
 # 컨트롤러 IRSA + 애드온(helm)은 eks 모듈 내부(modules/eks/addons.tf)에서 관리한다.
 

@@ -13,6 +13,11 @@ variable "endpoint_public_access" {
   type    = bool
   default = true
 }
+variable "enable_container_insights" {
+  type        = bool
+  default     = true
+  description = "Container Insights(amazon-cloudwatch-observability): 파드 실시간 메트릭+로그. false면 로그는 standalone Fluent Bit로 폴백."
+}
 variable "node_instance_type" { type = string }
 variable "node_min_size" { type = number }
 variable "node_max_size" { type = number }
