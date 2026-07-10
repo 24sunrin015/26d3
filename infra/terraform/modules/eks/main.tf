@@ -40,6 +40,10 @@ resource "aws_eks_cluster" "this" {
     bootstrap_cluster_creator_admin_permissions = true # 생성자에 kubectl 관리권한
   }
 
+  # 컨트롤플레인 로그 → CloudWatch (관리형, 노드 자원 소비 0)
+  # 관측성 최대화: API/audit/authenticator/controllerManager/scheduler 전량
+  enabled_cluster_log_types = ["api", "audit", "authenticator", "controllerManager", "scheduler"]
+
   tags       = var.tags
   depends_on = [aws_iam_role_policy_attachment.cluster]
 }

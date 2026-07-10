@@ -25,12 +25,16 @@
 - **product의 S3 버킷 env 키 이름**: `config.env`에 `S3_BUCKET`/`BUCKET_NAME`을 모두 넣어 뒀지만, 앱이 다른 키(`AWS_BUCKET` 등)를 읽으면 추가. IRSA로 AWS 자격증명은 자동 주입되므로 키/시크릿 env는 불필요.
 - **S3 오브젝트 키 규칙**: `/images/product50001.jpg` 다운로드가 S3 어떤 키로 매핑되는지. CloudFront 함수가 `/images` 프리픽스를 **제거**하도록 기본 설정(예시 기준). 앱이 `images/` 프리픽스로 저장하면 이 함수를 빼야 한다. `curl -I https://<domain>/images/<올린파일>`로 200 확인.
 - **product GET 응답에 requestid가 에코되는지**: 에코된다면 CloudFront `id` 캐싱이 다른 요청의 requestid를 되돌려줘 변조 판정 위험. 그럴 땐 product 캐시 behavior의 TTL을 0으로 낮추거나 캐싱 해제(`CachingDisabled`). 응답 body를 실제로 찍어 확인.
+  - 검증법: `curl "…/v1/product?id=X&requestid=AAA&uuid=…"` 와 `requestid=BBB`로 두 번 호출 → 응답 body에 requestid가 들어있고 서로 다르면 **id-키 캐싱 금지**.
+  - 참고: 2025 풀이는 캐시 키를 `query_string=all`로 잡아(=requestid/uuid까지 키에 포함) 변조 위험을 회피했으나 product 캐시 히트가 사실상 0이었다. 2026 설계는 `id`만 키로 잡아 히트율을 얻는 대신 위 검증을 전제한다. product 테이블엔 requestid/uuid 컬럼이 없어 응답이 레코드만 반환하면 안전.
 - **user 스키마**: 2026 과제지는 id/username/email. 2025 바이너리엔 `status_message`가 있었으니 제공본이 다르면 `init.sql`/덤프 반영 확인.
 
 ## DB
 
 - **connection 폭주 / 5xx**: `db.t3.micro`는 max_connections가 낮다(~85). HPA로 파드가 늘면 커넥션 총합이 초과할 수 있음. RDS 대시보드 `DatabaseConnections` 감시. 앱 커넥션 풀은 바이너리 소관이라, 필요 시 파라미터그룹으로 `max_connections` 상향 검토(타입은 과제지 고정 — 변경 금지).
 - **MYSQL_HOST에 엔진명 넣지 말 것**: 순수 주소(RDS endpoint address)만. `terraform output rds_address`가 그 값.
+- **테이블 자동 적용**: `terraform apply` 시 `null_resource.db_tables`가 RDS·클러스터 ready 후 in-cluster mysql 파드(`db-tables-init`)로 `modules/rds/tables/*.sql`을 적용한다(스키마만). 실패 시: 노드 Ready·kubeconfig·RDS 도달성 확인. 스키마 SQL 수정하면 다음 apply에 자동 재적용(트리거=파일 해시).
+- **데이터(load_user.dump)는 자동 적재 안 함**(의도적). 시드는 수동으로: `provided/`에 dump를 두고 in-cluster 파드로 `mysql … < load_user.dump` 실행.
 
 ## 비용(노드 수)
 

@@ -22,6 +22,10 @@ terraform {
       source  = "hashicorp/kubernetes"
       version = "~> 2.35"
     }
+    null = {
+      source  = "hashicorp/null"
+      version = "~> 3.2"
+    }
   }
 
   # 로컬 state 전용 (원격 backend·환경 분리 없음 — AGENTS §7)

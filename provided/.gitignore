@@ -1,4 +1,6 @@
 *.zip
 *.tar.gz
+images/
+*.dump
 !.gitignore
 !README.md
