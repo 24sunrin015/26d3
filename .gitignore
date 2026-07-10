@@ -1,0 +1,18 @@
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+
+# 민감값 (절대 커밋 금지 — AGENTS 6.6)
+*.tfvars
+*.tfvars.json
+!example.tfvars
+infra/k8s/overlays/prod/secret.env
+infra/k8s/overlays/prod/tf.env
+
+# OS/editor
+.DS_Store
+*.swp
