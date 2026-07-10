@@ -25,8 +25,9 @@
 - **product의 S3 버킷 env 키 이름**: `config.env`에 `S3_BUCKET`/`BUCKET_NAME`을 모두 넣어 뒀지만, 앱이 다른 키(`AWS_BUCKET` 등)를 읽으면 추가. IRSA로 AWS 자격증명은 자동 주입되므로 키/시크릿 env는 불필요.
 - **S3 오브젝트 키 규칙**: `/images/product50001.jpg` 다운로드가 S3 어떤 키로 매핑되는지. CloudFront 함수가 `/images` 프리픽스를 **제거**하도록 기본 설정(예시 기준). 앱이 `images/` 프리픽스로 저장하면 이 함수를 빼야 한다. `curl -I https://<domain>/images/<올린파일>`로 200 확인.
 - **product GET 응답에 requestid가 에코되는지**: 에코된다면 CloudFront `id` 캐싱이 다른 요청의 requestid를 되돌려줘 변조 판정 위험. 그럴 땐 product 캐시 behavior의 TTL을 0으로 낮추거나 캐싱 해제(`CachingDisabled`). 응답 body를 실제로 찍어 확인.
-  - 검증법: `curl "…/v1/product?id=X&requestid=AAA&uuid=…"` 와 `requestid=BBB`로 두 번 호출 → 응답 body에 requestid가 들어있고 서로 다르면 **id-키 캐싱 금지**.
-  - 참고: 2025 풀이는 캐시 키를 `query_string=all`로 잡아(=requestid/uuid까지 키에 포함) 변조 위험을 회피했으나 product 캐시 히트가 사실상 0이었다. 2026 설계는 `id`만 키로 잡아 히트율을 얻는 대신 위 검증을 전제한다. product 테이블엔 requestid/uuid 컬럼이 없어 응답이 레코드만 반환하면 안전.
+  - **requestid는 매 요청 유니크(중복 없음)** → 응답이 requestid를 에코하면 캐시 히트마다 100% 변조 판정(전 구간 0점). 그래서 **product 캐싱 기본 OFF**(`enable_product_cache=false`).
+  - 검증법(당일): `curl "…/v1/product?id=X&requestid=AAA&uuid=…"` 와 `requestid=BBB`로 두 번 호출 → 응답 body에 requestid가 **없으면** 안전 → `terraform apply -var enable_product_cache=true` 로 id-키 캐싱 ON(성능·비용 이득). 있으면 그대로 OFF 유지.
+  - 참고: 2025는 캐시 키 `query_string=all`(requestid 포함)이라 히트 0이었다. 2026은 토글로 안전(OFF)↔최적(ON) 선택.
 - **user 스키마**: 2026 과제지는 id/username/email. 2025 바이너리엔 `status_message`가 있었으니 제공본이 다르면 `init.sql`/덤프 반영 확인.
 
 ## DB

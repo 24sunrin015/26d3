@@ -16,7 +16,9 @@ data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
 
 # product GET 전용 캐시 정책: 캐시 키는 id만, TTL 짧게.
 # (origin 요청에는 전체 쿼리스트링을 전달해 앱의 requestid/uuid 검증을 보존)
+# enable_product_cache=true 일 때만 생성/사용.
 resource "aws_cloudfront_cache_policy" "product" {
+  count       = var.enable_product_cache ? 1 : 0
   name        = "${var.prefix}-product-id-cache"
   min_ttl     = 1
   default_ttl = 5
@@ -100,7 +102,8 @@ resource "aws_cloudfront_distribution" "this" {
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
   }
 
-  # product: id-키 캐싱 (동일 id 반복 조회 → 엣지 히트, SLO·비용 개선)
+  # product: 기본은 캐시 없음(안전). enable_product_cache=true면 id-키 캐싱.
+  # requestid 유니크 + 응답 에코 시 캐싱은 전 구간 변조 위험 → 당일 검증 후 토글.
   ordered_cache_behavior {
     path_pattern           = "/v1/product*"
     target_origin_id       = local.alb_origin_id
@@ -108,7 +111,7 @@ resource "aws_cloudfront_distribution" "this" {
     allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
     cached_methods         = ["GET", "HEAD"]
 
-    cache_policy_id          = aws_cloudfront_cache_policy.product.id
+    cache_policy_id          = var.enable_product_cache ? aws_cloudfront_cache_policy.product[0].id : data.aws_cloudfront_cache_policy.disabled.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
   }
 

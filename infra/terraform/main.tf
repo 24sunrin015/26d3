@@ -159,6 +159,7 @@ module "cloudfront" {
   s3_bucket_id          = module.s3.bucket_id
   s3_bucket_arn         = module.s3.bucket_arn
   s3_bucket_domain_name = module.s3.bucket_regional_domain_name
+  enable_product_cache  = var.enable_product_cache
 }
 
 # ---------------------------------------------------------------------

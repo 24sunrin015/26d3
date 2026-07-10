@@ -100,3 +100,10 @@ variable "db_allocated_storage" {
   type        = number
   default     = 20
 }
+
+# ---- CloudFront ----
+variable "enable_product_cache" {
+  description = "product GET 응답 CloudFront 캐싱. 기본 false(안전). 당일 바이너리로 응답에 requestid 미에코 확인 후 true."
+  type        = bool
+  default     = false
+}
