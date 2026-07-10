@@ -1,12 +1,14 @@
-INFRA_DIR   := infra
-K8S_OVERLAY := k8s/overlays/prod
+INFRA_DIR   := infra/terraform
+K8S_OVERLAY := infra/k8s/overlays/prod
 PROVIDED    := provided
 BINARIES    := user product stress
 
 export TF_VAR_student_id := $(STUDENT_ID)
 
-.PHONY: check-id check-bin up down init plan apply destroy fmt validate k8s k8s-down
+.PHONY: check-id check-bin up down init plan apply destroy fmt validate \
+        images addons deploy k8s k8s-down endpoint
 
+# ── 이중 blocker (현장 사고 방지) ─────────────────────────────
 check-id:
 ifndef STUDENT_ID
 	$(error STUDENT_ID가 설정되지 않았습니다. 'export STUDENT_ID=<비번호>' 후 다시 실행하세요)
@@ -25,20 +27,21 @@ check-bin:
 	fi; \
 	echo "binaries OK: $(BINARIES)"
 
-up: check-id check-bin init apply
-	@if [ -d "$(K8S_OVERLAY)" ]; then $(MAKE) k8s; fi
+# ── 전체 플로우 ──────────────────────────────────────────────
+# apply(인프라) → images(ECR 푸시) → addons(컨트롤러) → deploy(앱)
+up: check-id check-bin init apply images addons deploy endpoint
 
 down: check-id
-	@if [ -d "$(K8S_OVERLAY)" ]; then $(MAKE) k8s-down; fi
 	terraform -chdir=$(INFRA_DIR) destroy -auto-approve
 
+# ── Terraform ────────────────────────────────────────────────
 init: check-id
 	terraform -chdir=$(INFRA_DIR) init
 
 plan: check-id
 	terraform -chdir=$(INFRA_DIR) plan
 
-apply: check-id check-bin
+apply: check-id
 	terraform -chdir=$(INFRA_DIR) apply -auto-approve
 
 destroy: check-id
@@ -47,12 +50,26 @@ destroy: check-id
 fmt:
 	terraform -chdir=$(INFRA_DIR) fmt -recursive
 
-validate: check-id
+validate:
 	terraform -chdir=$(INFRA_DIR) validate
 
-k8s: check-id check-bin
-	printf 'STUDENT_ID=%s\n' "$(STUDENT_ID)" > $(K8S_OVERLAY)/secret.env
-	kubectl apply -k $(K8S_OVERLAY)
+# ── 이미지 & 배포 ────────────────────────────────────────────
+images: check-bin
+	bash docker/build-push.sh
 
-k8s-down:
+addons: check-id
+	bash infra/k8s/scripts/addons.sh
+
+deploy: check-id check-bin
+	bash infra/k8s/scripts/deploy.sh
+
+# k8s = 컨트롤러 설치 + 앱 배포 (인프라가 이미 apply된 상태 가정)
+k8s: addons deploy
+
+k8s-down: check-id
 	kubectl delete -k $(K8S_OVERLAY) --ignore-not-found || true
+
+# 제출용 단일 엔드포인트 출력
+endpoint:
+	@echo "── 제출 엔드포인트 ──"
+	@terraform -chdir=$(INFRA_DIR) output -raw endpoint; echo

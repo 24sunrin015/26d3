@@ -10,8 +10,13 @@ crash.*.log
 *.tfvars
 *.tfvars.json
 !example.tfvars
+
+# k8s overlay 생성물 (make deploy가 .tmpl/output에서 렌더 — 커밋 금지)
 infra/k8s/overlays/prod/secret.env
-infra/k8s/overlays/prod/tf.env
+infra/k8s/overlays/prod/config.env
+infra/k8s/overlays/prod/kustomization.yaml
+infra/k8s/overlays/prod/targetgroupbindings.yaml
+infra/k8s/overlays/prod/sa-patch.yaml
 
 # OS/editor
 .DS_Store
