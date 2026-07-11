@@ -59,9 +59,9 @@ variable "node_min_size" {
 }
 
 variable "node_max_size" {
-  description = "워커노드 최대 대수. 피크 스케일아웃 상한."
+  description = "워커노드 최대 대수(CA 상한). 피크 스케일아웃 상한."
   type        = number
-  default     = 5
+  default     = 4
 }
 
 variable "node_desired_size" {
