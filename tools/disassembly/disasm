@@ -1,0 +1,238 @@
+#!/usr/bin/env bash
+# =====================================================================
+# disasm — Go 바이너리에서 "AI 재구성용 재료 + pseudocode"를 뽑는 툴
+#
+#   ./disasm <바이너리> [--all]
+#     → ./disassembly/<바이너리명>-<YYYYMMDDHHMMSS>/
+#
+# 왜: 대회 앱 바이너리(user/product/stress)는 코드 레벨에서 요청을
+#     조건별로 다르게 처리해 비정상 판정을 내린다. 그 로직을 읽으려면
+#     바이너리를 사람이 읽을 수 있는 형태로 풀어야 한다.
+#
+# 원리(3단계 중 이 툴은 1~2단계까지만):
+#   1. 재료 추출  — go tool(nm/objdump/buildinfo) + strings. AI 아님, 즉시.
+#   2. pseudocode — Ghidra 디컴파일러(결정론적 알고리즘, AI 아님). Docker로 실행.
+#   3. .go 재구성 — 위 재료를 AI(현장=Q Developer)에 먹여 복원. ← 툴 범위 밖.
+#
+# 환경: 훈련(mac arm64) / 현장(EC2 amd64) 모두 동일 동작.
+#   - Ghidra는 멀티아치 Docker 이미지(blacktop/ghidra)로 실행 → 재현성.
+#   - go tool 계층은 호스트 go를 사용(없으면 스킵하고 경고).
+# =====================================================================
+set -euo pipefail
+
+# ---- 설정 ----------------------------------------------------------
+GHIDRA_IMAGE="${GHIDRA_IMAGE:-blacktop/ghidra}"
+DECOMPILE_TIMEOUT="${DECOMPILE_TIMEOUT:-600}" # Ghidra 분석 타임아웃(초)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# ---- 인자 파싱 -----------------------------------------------------
+ALL=0
+BIN_ARG=""
+for a in "$@"; do
+	case "$a" in
+	--all) ALL=1 ;;
+	-h | --help)
+		grep -E '^#( |$)' "$0" | sed -E 's/^# ?//'
+		exit 0
+		;;
+	-*)
+		echo "알 수 없는 옵션: $a" >&2
+		exit 2
+		;;
+	*) BIN_ARG="$a" ;;
+	esac
+done
+
+if [ -z "$BIN_ARG" ]; then
+	echo "사용법: ./disasm <바이너리> [--all]" >&2
+	exit 2
+fi
+if [ ! -f "$BIN_ARG" ]; then
+	echo "바이너리를 찾을 수 없습니다: $BIN_ARG" >&2
+	exit 2
+fi
+
+BIN_ABS="$(cd "$(dirname "$BIN_ARG")" && pwd)/$(basename "$BIN_ARG")"
+BIN_NAME="$(basename "$BIN_ABS")"
+BIN_DIR="$(dirname "$BIN_ABS")"
+TS="$(date +%Y%m%d%H%M%S)"
+OUTDIR="$SCRIPT_DIR/disassembly/${BIN_NAME}-${TS}"
+mkdir -p "$OUTDIR/pseudocode" "$OUTDIR/04_objdump_src"
+
+echo "== disasm =="
+echo "대상   : $BIN_ABS"
+echo "출력   : $OUTDIR"
+echo
+
+# ---- 도구 감지 -----------------------------------------------------
+have() { command -v "$1" >/dev/null 2>&1; }
+HAVE_GO=0
+have go && HAVE_GO=1
+HAVE_DOCKER=0
+have docker && HAVE_DOCKER=1
+
+# ---- 모듈 경로 추출(앱 함수 필터의 기준) ----------------------------
+# 예: user 바이너리 → path=user → 앱 함수 = main.* / user/*
+MODPATH=""
+if [ "$HAVE_GO" = 1 ]; then
+	MODPATH="$(go version -m "$BIN_ABS" 2>/dev/null | awk '$1=="path"{print $2; exit}')" || true
+fi
+[ -z "$MODPATH" ] && MODPATH="$BIN_NAME" # 폴백: 바이너리명
+
+# 앱 함수 판별용 grep 정규식 (main 패키지 + 모듈 패키지)
+APP_RE="^(main[./]|${MODPATH//\//\\/}[/.])"
+
+# =====================================================================
+# 1단계: go tool 재료 추출 (AI 아님, 즉시)
+# =====================================================================
+if [ "$HAVE_GO" = 1 ]; then
+	echo "[1/2] go tool 재료 추출..."
+
+	# 00 빌드정보 — Go 버전 / 의존성 / 빌드 플래그 (stripped여도 대개 유지)
+	go version -m "$BIN_ABS" >"$OUTDIR/00_buildinfo.txt" 2>&1 || true
+
+	# 01 심볼 — 앱 함수 목록 (핸들러 위치 파악)
+	if go tool nm "$BIN_ABS" >"$OUTDIR/01_symbols.all.txt" 2>/dev/null; then
+		{
+			echo "# 앱 함수(main + $MODPATH). 전체는 01_symbols.all.txt 참고."
+			grep -E ' [Tt] ' "$OUTDIR/01_symbols.all.txt" | awk '{print $3}' |
+				grep -E "$APP_RE" | sort -u
+		} >"$OUTDIR/01_symbols.txt" || true
+	else
+		echo "  (nm 실패 — stripped 가능성. pseudocode 계층에서 복구 시도)" >"$OUTDIR/01_symbols.txt"
+	fi
+
+	# 03 함수 → 파일:줄 → 주소 맵 (pcln/DWARF, non-stripped에서 유지)
+	{
+		printf "func\tfile:line\taddr\n"
+		go tool objdump "$BIN_ABS" 2>/dev/null |
+			awk '/^TEXT /{sub(/\(SB\)$/,"",$2); f=$2; getline; if ($1 ~ /\.go:[0-9]+/) print f"\t"$1"\t"} ' |
+			grep -E "$APP_RE" | sort -u
+	} >"$OUTDIR/03_funcmap.tsv" 2>/dev/null || true
+
+	# 04 앱 함수별 source-annotated 디스어셈블리 (소스가 로컬에 있으면 소스라인 포함)
+	if [ -s "$OUTDIR/01_symbols.txt" ]; then
+		while IFS= read -r fn; do
+			[ -z "$fn" ] && continue
+			[[ "$fn" == \#* ]] && continue
+			safe="$(printf '%s' "$fn" | tr '/():*.' '______')"
+			go tool objdump -S -s "^$(printf '%s' "$fn" | sed 's/[.[\*^$()+?{|]/\\&/g')$" \
+				"$BIN_ABS" >"$OUTDIR/04_objdump_src/${safe}.txt" 2>/dev/null || true
+		done <"$OUTDIR/01_symbols.txt"
+	fi
+
+else
+	echo "[1/2] go 미설치 — go tool 재료 계층 스킵(현장 EC2엔 go 설치 권장)"
+	echo "go 미설치로 스킵됨" >"$OUTDIR/00_buildinfo.txt"
+fi
+
+if have strings; then
+	strings -n 4 "$BIN_ABS" >"$OUTDIR/02_strings.all.txt" 2>/dev/null || true
+	{
+		echo "## 경로/라우트"
+		grep -aoE '/(v1/(user|product|stress)|images|healthcheck)' "$OUTDIR/02_strings.all.txt" |
+			sort -u
+		echo
+		echo "## SQL 쿼리 조각"
+		grep -aoE '(SELECT|INSERT INTO|UPDATE|DELETE FROM|ON DUPLICATE KEY UPDATE|WHERE|VALUES)[A-Za-z0-9 ,._()=?*`-]{0,80}' \
+			"$OUTDIR/02_strings.all.txt" |
+			grep -viE '(GC|sweep|goroutine|runtime)' | sort -u
+		echo
+		echo "## 환경변수 키"
+		grep -aoE '(MYSQL_(USER|PASSWORD|HOST|PORT|DBNAME)|AWS_[A-Z_]+|S3_[A-Z_]+|BUCKET[A-Z_]*|PORT|STUDENT_ID)' \
+			"$OUTDIR/02_strings.all.txt" | sort -u
+	} >"$OUTDIR/02_strings.txt" 2>/dev/null || true
+fi
+
+# ---- tier 감지 -----------------------------------------------------
+TIER="C(stripped 추정)"
+if have file && file "$BIN_ABS" | grep -q 'not stripped'; then
+	# 소스 텍스트가 로컬에 있어 objdump -S가 실제 소스를 붙였는지 확인
+	if [ -d "$OUTDIR/04_objdump_src" ] && grep -rqlE '\bif |:= |func \(' "$OUTDIR/04_objdump_src" 2>/dev/null; then
+		TIER="A(non-stripped + 소스 로컬 존재)"
+	else
+		TIER="B(non-stripped, 소스 없음)"
+	fi
+fi
+echo "  감지된 tier: $TIER"
+echo
+
+# =====================================================================
+# 2단계: Ghidra pseudocode (결정론적, Docker로 실행)
+# =====================================================================
+echo "[2/2] Ghidra pseudocode 추출 (Docker: $GHIDRA_IMAGE)..."
+if [ "$HAVE_DOCKER" != 1 ]; then
+	echo "  Docker 미설치 — pseudocode 계층 스킵." >&2
+	echo "  (go tool 재료만으로도 non-stripped 바이너리는 로직 파악 가능)" >&2
+	echo "SKIPPED: docker 미설치" >"$OUTDIR/pseudocode/_STATUS.txt"
+else
+	# Ghidra 필터 인자: --all 이면 전체, 아니면 앱 패키지 접두어만
+	GH_FILTERS=()
+	if [ "$ALL" = 1 ]; then
+		GH_FILTERS=(--all)
+	else
+		GH_FILTERS=("main." "${MODPATH}/" "${MODPATH}.")
+	fi
+
+	set +e
+	docker run --rm \
+		--entrypoint /bin/sh \
+		-e MAXMEM="${MAXMEM:-4G}" \
+		-v "$BIN_DIR":/samples:ro \
+		-v "$SCRIPT_DIR/ghidra_scripts":/scripts:ro \
+		-v "$OUTDIR/pseudocode":/out \
+		"$GHIDRA_IMAGE" \
+		-c 'mkdir -p /tmp/proj && exec support/analyzeHeadless /tmp/proj disasmproj \
+			-import "/samples/'"$BIN_NAME"'" \
+			-scriptPath /scripts \
+			-analysisTimeoutPerFile "'"$DECOMPILE_TIMEOUT"'" \
+			-deleteProject \
+			-postScript DecompileDump.java /out '"${GH_FILTERS[*]}" \
+		>"$OUTDIR/pseudocode/_ghidra.log" 2>&1
+	rc=$?
+	set -e
+	if [ "$rc" -ne 0 ]; then
+		echo "  Ghidra 실행 실패(rc=$rc). 로그: $OUTDIR/pseudocode/_ghidra.log" >&2
+	else
+		count=0
+		for _f in "$OUTDIR"/pseudocode/*.c; do
+			[ -e "$_f" ] && count=$((count + 1))
+		done
+		echo "  pseudocode 함수 ${count}개 생성"
+	fi
+	if [ "$(id -u)" != 0 ]; then
+		docker run --rm --entrypoint chown -v "$OUTDIR":/fix "$GHIDRA_IMAGE" \
+			-R "$(id -u):$(id -g)" /fix >/dev/null 2>&1 || true
+	fi
+fi
+
+# =====================================================================
+# 요약 리포트
+# =====================================================================
+{
+	echo "# disasm 리포트 — $BIN_NAME"
+	echo
+	echo "- 생성: $(date '+%Y-%m-%d %H:%M:%S %Z')"
+	echo "- 대상: \`$BIN_ABS\`"
+	echo "- 모듈 경로: \`$MODPATH\`"
+	echo "- tier: **$TIER**"
+	echo
+	echo "## 파일"
+	echo "| 파일 | 내용 |"
+	echo "|---|---|"
+	echo "| 00_buildinfo.txt | Go 버전·의존성·빌드플래그 |"
+	echo "| 01_symbols.txt | 앱 함수 목록(핸들러 위치) |"
+	echo "| 02_strings.txt | 라우트·응답바디·에러메시지 |"
+	echo "| 03_funcmap.tsv | 함수 → 파일:줄 → 주소 |"
+	echo "| 04_objdump_src/ | 앱 함수별 소스-주석 디스어셈블리 |"
+	echo "| pseudocode/ | Ghidra C 유사 pseudocode (함수당 1파일) |"
+	echo
+	echo "## 다음 단계 (AI 재구성)"
+	echo "위 재료(특히 pseudocode/ + 04_objdump_src/ + 02_strings.txt)를"
+	echo "AI(현장=AWS Q Developer)에 붙여넣어 .go 로직을 재구성/해석한다."
+	echo "이 툴은 재료+pseudocode까지만 담당한다."
+} >"$OUTDIR/REPORT.md"
+
+echo
+echo "완료 → $OUTDIR"
+echo "요약  : $OUTDIR/REPORT.md"

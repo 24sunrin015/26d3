@@ -18,6 +18,9 @@ infra/k8s/overlays/prod/kustomization.yaml
 infra/k8s/overlays/prod/targetgroupbindings.yaml
 infra/k8s/overlays/prod/sa-patch.yaml
 
+# disassembly 툴 출력물 (바이너리 분석 결과 — 커밋 금지)
+tools/disassembly/disassembly/
+
 # OS/editor
 .DS_Store
 *.swp
