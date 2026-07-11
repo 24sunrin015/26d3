@@ -16,15 +16,17 @@ resource "aws_security_group" "rds" {
   }
 }
 
+# count 사용: 리스트 길이는 plan에 확정(=1), SG id 값은 apply-time이어도 인자로만 쓰여 OK.
+# (for_each는 키가 apply-time unknown이라 plan 실패)
 resource "aws_security_group_rule" "rds_ingress" {
-  for_each = toset(var.ingress_sg_ids)
+  count = length(var.ingress_sg_ids)
 
   type                     = "ingress"
   from_port                = 3306
   to_port                  = 3306
   protocol                 = "tcp"
   security_group_id        = aws_security_group.rds.id
-  source_security_group_id = each.value
+  source_security_group_id = var.ingress_sg_ids[count.index]
 }
 
 # =====================================================================
