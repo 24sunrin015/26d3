@@ -14,35 +14,6 @@ data "aws_cloudfront_origin_request_policy" "all_viewer_except_host" {
   name = "Managed-AllViewerExceptHostHeader"
 }
 
-# product GET 전용 캐시 정책: 캐시 키는 id만, TTL 짧게.
-# (origin 요청에는 전체 쿼리스트링을 전달해 앱의 requestid/uuid 검증을 보존)
-# enable_product_cache=true 일 때만 생성/사용.
-resource "aws_cloudfront_cache_policy" "product" {
-  count       = var.enable_product_cache ? 1 : 0
-  name        = "${var.prefix}-product-id-cache"
-  min_ttl     = 1
-  default_ttl = 5
-  max_ttl     = 30
-
-  parameters_in_cache_key_and_forwarded_to_origin {
-    enable_accept_encoding_brotli = true
-    enable_accept_encoding_gzip   = true
-
-    query_strings_config {
-      query_string_behavior = "whitelist"
-      query_strings {
-        items = ["id"]
-      }
-    }
-    headers_config {
-      header_behavior = "none"
-    }
-    cookies_config {
-      cookie_behavior = "none"
-    }
-  }
-}
-
 # /images 프리픽스 제거 (예: /images/product50001.jpg → S3 key product50001.jpg)
 # ⚠️ 앱의 S3 키 규칙에 따라 조정 필요 — 제공 바이너리로 검증(TROUBLESHOOTING 참고)
 resource "aws_cloudfront_function" "strip_images_prefix" {
@@ -99,19 +70,6 @@ resource "aws_cloudfront_distribution" "this" {
     cached_methods         = ["GET", "HEAD"]
 
     cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
-  }
-
-  # product: 기본은 캐시 없음(안전). enable_product_cache=true면 id-키 캐싱.
-  # requestid 유니크 + 응답 에코 시 캐싱은 전 구간 변조 위험 → 당일 검증 후 토글.
-  ordered_cache_behavior {
-    path_pattern           = "/v1/product*"
-    target_origin_id       = local.alb_origin_id
-    viewer_protocol_policy = "redirect-to-https"
-    allowed_methods        = ["GET", "HEAD", "OPTIONS", "PUT", "POST", "PATCH", "DELETE"]
-    cached_methods         = ["GET", "HEAD"]
-
-    cache_policy_id          = var.enable_product_cache ? aws_cloudfront_cache_policy.product[0].id : data.aws_cloudfront_cache_policy.disabled.id
     origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer_except_host.id
   }
 
