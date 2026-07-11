@@ -133,7 +133,7 @@ resource "helm_release" "fluent_bit" {
   name       = "aws-for-fluent-bit"
   repository = "https://aws.github.io/eks-charts"
   chart      = "aws-for-fluent-bit"
-  version    = "0.1.34"
+  version    = "0.2.0"
   namespace  = "kube-system"
 
   set {
@@ -210,7 +210,7 @@ resource "helm_release" "metrics_server" {
   name       = "metrics-server"
   repository = "https://kubernetes-sigs.github.io/metrics-server/"
   chart      = "metrics-server"
-  version    = "3.12.2"
+  version    = "3.13.1"
   namespace  = "kube-system"
 
   depends_on = [aws_eks_node_group.default]
@@ -221,7 +221,7 @@ resource "helm_release" "aws_load_balancer_controller" {
   name       = "aws-load-balancer-controller"
   repository = "https://aws.github.io/eks-charts"
   chart      = "aws-load-balancer-controller"
-  version    = "1.8.1"
+  version    = "3.4.1"
   namespace  = "kube-system"
 
   set {
@@ -257,7 +257,7 @@ resource "helm_release" "cluster_autoscaler" {
   name       = "cluster-autoscaler"
   repository = "https://kubernetes.github.io/autoscaler"
   chart      = "cluster-autoscaler"
-  version    = "9.37.0"
+  version    = "9.58.0"
   namespace  = "kube-system"
 
   set {
@@ -267,6 +267,11 @@ resource "helm_release" "cluster_autoscaler" {
   set {
     name  = "awsRegion"
     value = var.region
+  }
+  # CA 이미지 = 클러스터 마이너와 일치(버전 불일치 방지). cluster_version 바꾸면 자동 추종.
+  set {
+    name  = "image.tag"
+    value = "v${var.cluster_version}.0"
   }
   set {
     name  = "rbac.serviceAccount.name"

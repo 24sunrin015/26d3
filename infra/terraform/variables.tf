@@ -41,9 +41,9 @@ variable "single_nat_gateway" {
 
 # ---- EKS ----
 variable "cluster_version" {
-  description = "EKS 쿠버네티스 버전"
+  description = "EKS 쿠버네티스 버전. 2026-07 지원: 1.36/1.35/1.34/1.33(1.33은 곧 EOL). CA 차트 appVersion과 정렬돼 1.35 사용."
   type        = string
-  default     = "1.31"
+  default     = "1.35"
 }
 
 variable "node_instance_type" {
