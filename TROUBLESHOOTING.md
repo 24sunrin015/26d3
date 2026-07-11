@@ -32,7 +32,9 @@
 
 ## DB
 
-- **connection 폭주 / 5xx**: `db.t3.micro`는 max_connections가 낮다(~85). HPA로 파드가 늘면 커넥션 총합이 초과할 수 있음. RDS 대시보드 `DatabaseConnections` 감시. 앱 커넥션 풀은 바이너리 소관이라, 필요 시 파라미터그룹으로 `max_connections` 상향 검토(타입은 과제지 고정 — 변경 금지).
+- **connection 폭주 / 5xx**: `db.t3.micro` 기본 max_connections는 낮다(~85). 튜닝 파라미터그룹에서 **200으로 상향**(메모리 여유 내). 그래도 HPA 파드가 폭증하면 부족할 수 있으니 RDS 대시보드 `DatabaseConnections` 감시. 앱 커넥션 풀은 바이너리 소관이라 근본 통제 불가 → **캐싱으로 DB read 압력을 걷어내는 게 1차 방어**. (RDS Proxy는 지연·비용 + 2025 비추천으로 미채택.)
+- **DB 튜닝(파라미터그룹)**: `${prefix}-mysql80` — buffer_pool 3/8(데이터 작아 전량 캐시), `innodb_flush_log_at_trx_commit=2`·`sync_binlog=0`(쓰기 처리량↑, Multi-AZ 물리복제라 안전), gp3용 io_capacity 상향. 인스턴스 클래스가 현장에서 바뀌면 buffer_pool은 formula라 자동 스케일, `max_connections`(200)만 재검토.
+- **슬로우쿼리 관측**: `long_query_time=0.1`(100ms 초과 로깅) + `error`/`slowquery` 로그를 CloudWatch로 수출(`/aws/rds/instance/<id>/slowquery`). 경기 중 병목 쿼리 즉시 확인. 커버링 인덱스가 안 먹으면 `EXPLAIN`으로 확인.
 - **MYSQL_HOST에 엔진명 넣지 말 것**: 순수 주소(RDS endpoint address)만. `terraform output rds_address`가 그 값.
 - **테이블 자동 적용**: `terraform apply` 시 `null_resource.db_tables`가 RDS·클러스터 ready 후 in-cluster mysql 파드(`db-tables-init`)로 `modules/rds/tables/*.sql`을 적용한다(스키마만). 실패 시: 노드 Ready·kubeconfig·RDS 도달성 확인. 스키마 SQL 수정하면 다음 apply에 자동 재적용(트리거=파일 해시).
 - **데이터(load_user.dump)는 자동 적재 안 함**(의도적). 시드는 수동으로: `provided/`에 dump를 두고 in-cluster 파드로 `mysql … < load_user.dump` 실행.

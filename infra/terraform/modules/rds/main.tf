@@ -27,6 +27,88 @@ resource "aws_security_group_rule" "rds_ingress" {
   source_security_group_id = each.value
 }
 
+# =====================================================================
+# 튜닝 파라미터그룹 — db.t3.micro(2vCPU/1GiB) 고정 사양 내 최대 성능
+# 데이터셋이 작아(시드 수 MB) 버퍼풀이 전량 캐시 → 사실상 메모리 조회.
+# 모든 값 dynamic → apply_method=immediate (재부팅 불필요).
+# =====================================================================
+resource "aws_db_parameter_group" "this" {
+  name   = "${var.prefix}-mysql80"
+  family = "mysql8.0"
+
+  # 커넥션 — HPA 파드 다수 대비 헤드룸(메모리 여유 내). DatabaseConnections 모니터.
+  parameter {
+    name         = "max_connections"
+    value        = "200"
+    apply_method = "immediate"
+  }
+
+  # InnoDB 버퍼풀 — 데이터가 작아 3/8이면 전량 캐시 + 커넥션 메모리 여유 확보
+  parameter {
+    name         = "innodb_buffer_pool_size"
+    value        = "{DBInstanceClassMemory*3/8}"
+    apply_method = "immediate"
+  }
+
+  # 쓰기 처리량 (대회용 내구성 트레이드). Multi-AZ 인스턴스는 물리복제라 binlog 무관 → sync_binlog=0 안전.
+  parameter {
+    name         = "innodb_flush_log_at_trx_commit"
+    value        = "2"
+    apply_method = "immediate"
+  }
+  parameter {
+    name         = "sync_binlog"
+    value        = "0"
+    apply_method = "immediate"
+  }
+
+  # SSD(gp3) 최적화 — 이웃 플러시 끄고 IO capacity 상향
+  parameter {
+    name         = "innodb_flush_neighbors"
+    value        = "0"
+    apply_method = "immediate"
+  }
+  parameter {
+    name         = "innodb_io_capacity"
+    value        = "1000"
+    apply_method = "immediate"
+  }
+  parameter {
+    name         = "innodb_io_capacity_max"
+    value        = "2000"
+    apply_method = "immediate"
+  }
+
+  # 커넥션 처리 효율
+  parameter {
+    name         = "thread_cache_size"
+    value        = "64"
+    apply_method = "immediate"
+  }
+  parameter {
+    name         = "table_open_cache"
+    value        = "2000"
+    apply_method = "immediate"
+  }
+
+  # 슬로우쿼리 관측 (100ms 초과 → 경기 중 병목 쿼리 탐지)
+  parameter {
+    name         = "slow_query_log"
+    value        = "1"
+    apply_method = "immediate"
+  }
+  parameter {
+    name         = "long_query_time"
+    value        = "0.1"
+    apply_method = "immediate"
+  }
+  parameter {
+    name         = "log_output"
+    value        = "FILE"
+    apply_method = "immediate"
+  }
+}
+
 resource "aws_db_instance" "this" {
   identifier     = var.identifier
   engine         = "mysql"
@@ -46,6 +128,7 @@ resource "aws_db_instance" "this" {
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.rds.id]
   publicly_accessible    = false
+  parameter_group_name   = aws_db_parameter_group.this.name
 
   # 대회 운영 편의 (clean apply/destroy)
   backup_retention_period = 1
@@ -53,8 +136,9 @@ resource "aws_db_instance" "this" {
   deletion_protection     = false
   apply_immediately       = true
 
-  # CloudWatch로 성능 관측
-  performance_insights_enabled = true
+  # 관측: Performance Insights + 에러/슬로우쿼리 로그를 CloudWatch로 수출(agentless)
+  performance_insights_enabled    = true
+  enabled_cloudwatch_logs_exports = ["error", "slowquery"]
 }
 
 # =====================================================================
