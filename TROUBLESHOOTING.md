@@ -49,14 +49,16 @@
 
 - **Athena에서 결과 0건**: ALB 로그가 S3에 쌓이기까지 몇 분 지연. glue 테이블은 파티션 없이 전체 스캔이라 별도 `MSCK` 불필요. `alb_access_logs` 테이블에 바로 쿼리.
 - **WAF 로그**: CloudWatch Logs Insights 저장쿼리 3종(`waf-blocked-*`, `waf-user-agent-distribution`) 사용. 당일 악성 패턴 역산 → WAF 룰 보정 루프.
-- **앱 로그 & 파드 메트릭**: 기본은 **Container Insights**(`amazon-cloudwatch-observability` 애드온, `enable_container_insights=true`). 앱별 파드 CPU/메모리·재시작이 CloudWatch에 쌓이고 대시보드 하단 위젯(앱별 파드 CPU%/메모리%)에 표시 + 컨테이너 로그도 함께 수집(`/aws/containerinsights/<cluster>/application`). CI를 끄면(false) 로그는 standalone Fluent Bit로 폴백(`/aws/eks/<cluster>/workloads`).
-  - 애드온은 `configuration_values`로 **Container Insights + 로그만** 켜고 **Application Signals(APM/트레이스)는 미구성**(Go 바이너리 계측 불가 + ALB가 이미 RED 제공). `enhanced_container_insights=false`로 커스텀 메트릭 비용도 절감. 파드 CPU/mem/log만 취함.
+- **앱 로그**: 기본은 `kubectl logs`. Container Insights는 미채택(operation-strategy §6 — CW agent가 stress CPU 반토막). CloudWatch 앱로그 집계가 꼭 필요하면 `-var enable_app_log_shipping=true`로 경량 Fluent Bit만 옵션 설치(`/aws/eks/<cluster>/workloads`). 트래픽/DB 분석은 agentless로 커버: ALB→Athena, WAF Logs Insights, RDS error/slowquery export.
 
-### 경기 중 실시간 스케일 조절 워크플로
+### 경기 중 실시간 스케일 조절 워크플로 (metrics-server만)
 
-- **즉시 반응(초 단위)**: `kubectl top pods -n default` / `k9s` / `kubectl get hpa -w` — CloudWatch보다 빠름(지연 없음). 스케일: `kubectl scale deploy/<app> --replicas=N` 또는 HPA min/max 조정 `kubectl edit hpa <app>`.
-- **추세·이력(분 단위)**: CloudWatch `apdev-ops` 대시보드 — 앱별 파드 CPU%/메모리%, 응답 p99, 노드 수. 어느 앱이 병목인지 보고 그 앱만 스케일.
-- **주의**: Container Insights agent DaemonSet가 노드 자원(~cpu/mem)을 먹어 노드 여유가 줄면 스케일아웃이 앞당겨져 cost ratio에 약간 불리. 비용이 빠듯하면 `-var enable_container_insights=false`로 끄고 `kubectl top`으로만 운영.
+경기 중 핵심 결정은 하나 — "stress가 CPU를 갉기 시작했나 → 3번째 노드(stress_node_max)로 갈까". CloudWatch(1분+ 지연)로는 60초 붕괴를 놓치므로 **metrics-server로만** 판단한다.
+
+- **관측**: `kubectl top pods -l app=stress` / `k9s` / `kubectl top nodes` / `kubectl get hpa -w`. metrics-server는 kubelet 직독이라 지연 없음, 모든 노드 커버.
+- **stress가 튀면**: 이미 HPA(target 70%)→Pending→CA가 자동으로 stress 노드를 2대까지 올린다. 수동 개입 필요 시 `kubectl edit hpa stress`(max↑) 또는 `stress_node_max`↑ 후 `make apply`.
+- **비용 판단**: `kubectl top nodes`로 stress 노드가 계속 포화면 length가 흉악한 것 → 3노드 허용(cost 2점 손실 < stress 5점 방어, §5). 순하면 2노드 유지.
+- user/product는 sleep이라 CPU ~0 → 스케일 불필요, 노드 A 1대 고정.
 
 ## 기타
 
