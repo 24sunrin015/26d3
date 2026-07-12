@@ -4,7 +4,7 @@ metadata:
   name: stress
   labels: { app: stress }
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels: { app: stress }
   strategy:
@@ -16,16 +16,24 @@ spec:
     metadata:
       labels: { app: stress }
     spec:
+      # stress 전용 노드(B)에 격리: taint toleration + nodeSelector.
+      # requests 1500m으로 노드당 pod 1개만 스케줄 → 2번째는 Pending → CA가 노드 증설.
+      nodeSelector: { role: stress }
+      tolerations:
+        - key: dedicated
+          operator: Equal
+          value: stress
+          effect: NoSchedule
       terminationGracePeriodSeconds: 15
       containers:
         - name: stress
           image: stress-app:latest
           ports:
             - { name: http, containerPort: 8080 }
-          # stress는 DB 미사용(요청의 length로 부하 생성). 환경변수 불필요.
+          # stress는 DB 미사용(요청 length로 부하 생성). 환경변수 불필요.
           resources:
-            requests: { cpu: 250m, memory: 128Mi }
-            limits: { cpu: "2", memory: 512Mi }
+            requests: { cpu: 1500m, memory: 128Mi }
+            limits: { cpu: 2000m, memory: 256Mi } # 노드 2 vCPU 통째로 버스트
           readinessProbe:
             httpGet: { path: /healthcheck, port: http }
             initialDelaySeconds: 3
@@ -57,8 +65,8 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: stress
-  minReplicas: 2
-  maxReplicas: 10
+  minReplicas: 1
+  maxReplicas: 2
   metrics:
     - type: Resource
       resource:
@@ -66,6 +74,6 @@ spec:
         target: { type: Utilization, averageUtilization: 70 }
   behavior:
     scaleUp:
-      stabilizationWindowSeconds: 0 # CPU 급증 즉시 대응(SLO 1.0s 보호)
+      stabilizationWindowSeconds: 0 # CPU 급증 즉시 스케일(→ Pending → CA 노드 증설)
     scaleDown:
       stabilizationWindowSeconds: 120

@@ -10,7 +10,7 @@ metadata:
   name: product
   labels: { app: product }
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels: { app: product }
   strategy:
@@ -22,6 +22,7 @@ spec:
     metadata:
       labels: { app: product }
     spec:
+      nodeSelector: { role: apps } # apps 노드그룹(A)에 격리
       serviceAccountName: product-sa
       terminationGracePeriodSeconds: 15
       containers:
@@ -33,10 +34,9 @@ spec:
             - configMapRef: { name: app-config }
             - secretRef: { name: app-secret }
           # ⚠️ product의 S3 버킷 env 키 이름은 제공 바이너리로 확정 필요(TROUBLESHOOTING).
-          #    app-config에 S3_BUCKET/BUCKET_NAME/AWS_REGION을 모두 실어 커버.
           resources:
-            requests: { cpu: 150m, memory: 192Mi }
-            limits: { cpu: "1", memory: 512Mi }
+            requests: { cpu: 512m, memory: 512Mi }
+            limits: { cpu: 512m, memory: 512Mi }
           readinessProbe:
             httpGet: { path: /healthcheck, port: http }
             initialDelaySeconds: 3
@@ -68,13 +68,10 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: product
-  minReplicas: 2
-  maxReplicas: 8
+  minReplicas: 1
+  maxReplicas: 2
   metrics:
     - type: Resource
       resource:
         name: cpu
-        target: { type: Utilization, averageUtilization: 65 }
-  behavior:
-    scaleDown:
-      stabilizationWindowSeconds: 120
+        target: { type: Utilization, averageUtilization: 70 }

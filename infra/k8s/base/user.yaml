@@ -4,7 +4,7 @@ metadata:
   name: user
   labels: { app: user }
 spec:
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels: { app: user }
   strategy:
@@ -16,7 +16,8 @@ spec:
     metadata:
       labels: { app: user }
     spec:
-      terminationGracePeriodSeconds: 15 # 앱 응답 빠름 → 짧게(배포 중 노드 증가=비용 감점 방지)
+      nodeSelector: { role: apps } # apps 노드그룹(A)에 격리 — stress와 CPU 경합 차단
+      terminationGracePeriodSeconds: 15
       containers:
         - name: user
           image: user-app:latest # overlay images: 로 ECR URL 주입
@@ -26,8 +27,8 @@ spec:
             - configMapRef: { name: app-config }
             - secretRef: { name: app-secret }
           resources:
-            requests: { cpu: 150m, memory: 192Mi }
-            limits: { cpu: "1", memory: 512Mi }
+            requests: { cpu: 512m, memory: 512Mi }
+            limits: { cpu: 512m, memory: 512Mi }
           readinessProbe:
             httpGet: { path: /healthcheck, port: http }
             initialDelaySeconds: 3
@@ -59,13 +60,10 @@ spec:
     apiVersion: apps/v1
     kind: Deployment
     name: user
-  minReplicas: 2
-  maxReplicas: 8
+  minReplicas: 1
+  maxReplicas: 2
   metrics:
     - type: Resource
       resource:
         name: cpu
-        target: { type: Utilization, averageUtilization: 65 }
-  behavior:
-    scaleDown:
-      stabilizationWindowSeconds: 120 # 피크 후 빠르게 축소(비용 평균↓)
+        target: { type: Utilization, averageUtilization: 70 }
