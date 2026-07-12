@@ -138,8 +138,9 @@ resource "aws_db_instance" "this" {
   deletion_protection     = false
   apply_immediately       = true
 
-  # 관측: Performance Insights + 에러/슬로우쿼리 로그를 CloudWatch로 수출(agentless)
-  performance_insights_enabled    = true
+  # 관측: 에러/슬로우쿼리 로그를 CloudWatch로 수출(agentless).
+  # Performance Insights는 db.t3.micro 미지원(InvalidParameterCombination) → 미사용.
+  # DB 지표는 CloudWatch AWS/RDS 네임스페이스(CPU/connections 등)로 대체.
   enabled_cloudwatch_logs_exports = ["error", "slowquery"]
 }
 
