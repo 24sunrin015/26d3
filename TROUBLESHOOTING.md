@@ -9,6 +9,12 @@
 - **TargetGroupBinding이 안 먹는다**: AWS LB Controller가 먼저 떠 있어야 CRD가 존재한다. 컨트롤러는 `terraform apply`의 `helm_release`로 설치되므로, `apply` 완료 후 `deploy`(앱)를 실행하면 순서가 보장된다.
 - **HPA가 `<unknown>`**: metrics-server 미기동. `apply`의 helm_release로 설치되며 기동까지 30초쯤 걸린다. `kubectl top nodes`로 확인.
 - **helm_release가 apply 중 타임아웃/인증 실패**: helm/kubernetes provider는 `aws eks get-token`(exec)으로 인증한다. `aws` CLI가 PATH에 있고 자격증명이 클러스터 생성 계정과 같아야 한다. 노드그룹이 Ready여야 컨트롤러 파드가 스케줄된다(`depends_on = module.eks`).
+- **stress 노드(self-managed)가 안 뜬다/조인 안 됨**: apps(A)는 관리형이지만 stress(B)는 warm pool 위해 self-managed ASG다. 조인 실패 시 순서대로 점검:
+  - `aws_eks_access_entry`(EC2_LINUX, node role) 생성됐는지 — 없으면 API auth 모드에서 노드가 인증 실패로 NotReady.
+  - launch template user_data(nodeadm NodeConfig)의 `apiServerEndpoint`/`certificateAuthority`/`cidr` 정상 렌더 확인. `kubectl get nodes -l role=stress`.
+  - AMI가 EKS-optimized AL2023(SSM `/aws/service/eks/optimized-ami/<ver>/...`)인지 — warm pool은 커스텀 AMI 불가.
+  - warm pool: `Warmed:Stopped` 인스턴스는 `kubectl get nodes`·running 카운트에 안 보이는 게 정상(cost 0). CA가 desired를 올릴 때 running으로 전환.
+  - taint 때문에 stress pod만 스케줄됨 — 다른 pod가 Pending이면 nodeSelector/toleration 확인.
 
 ## WAF (오탐이 곧 실점)
 
