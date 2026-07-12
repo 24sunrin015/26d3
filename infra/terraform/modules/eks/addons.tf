@@ -153,7 +153,7 @@ resource "helm_release" "fluent_bit" {
     value = "128Mi"
   }
 
-  depends_on = [aws_eks_node_group.default]
+  depends_on = [aws_eks_node_group.apps, aws_eks_node_group.stress]
 }
 
 # ---- helm_release ----
@@ -165,7 +165,7 @@ resource "helm_release" "metrics_server" {
   version    = "3.13.1"
   namespace  = "kube-system"
 
-  depends_on = [aws_eks_node_group.default]
+  depends_on = [aws_eks_node_group.apps, aws_eks_node_group.stress]
 }
 
 # AWS Load Balancer Controller (TargetGroupBinding CRD 제공)
@@ -201,7 +201,7 @@ resource "helm_release" "aws_load_balancer_controller" {
     value = module.irsa_lb_controller.iam_role_arn
   }
 
-  depends_on = [aws_eks_node_group.default]
+  depends_on = [aws_eks_node_group.apps, aws_eks_node_group.stress]
 }
 
 # Cluster Autoscaler (노드 스케일 — 비용 관리 핵심)
@@ -243,5 +243,5 @@ resource "helm_release" "cluster_autoscaler" {
     value = "2m"
   }
 
-  depends_on = [aws_eks_node_group.default]
+  depends_on = [aws_eks_node_group.apps, aws_eks_node_group.stress]
 }

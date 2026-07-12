@@ -14,5 +14,8 @@ output "node_security_group_id" {
   value = aws_eks_cluster.this.vpc_config[0].cluster_security_group_id
 }
 output "node_asg_names" {
-  value = aws_eks_node_group.default.resources[0].autoscaling_groups[*].name
+  value = concat(
+    aws_eks_node_group.apps.resources[0].autoscaling_groups[*].name,
+    aws_eks_node_group.stress.resources[0].autoscaling_groups[*].name,
+  )
 }

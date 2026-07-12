@@ -52,20 +52,10 @@ variable "node_instance_type" {
   default     = "t3.medium"
 }
 
-variable "node_min_size" {
-  description = "워커노드 최소 대수. 비용(baseline 2대) 관리의 하한."
-  type        = number
-  default     = 2
-}
-
-variable "node_max_size" {
-  description = "워커노드 최대 대수(CA 상한). 피크 스케일아웃 상한."
-  type        = number
-  default     = 4
-}
-
-variable "node_desired_size" {
-  description = "워커노드 초기 희망 대수"
+# 노드그룹 2개 전략(operation-strategy §4): apps 고정 1대 + stress min1/max2.
+# 평시 2노드(baseline) → 피크 최대 3노드.
+variable "stress_node_max" {
+  description = "stress 노드그룹 최대 대수. cost vs stress 트레이드오프(§5)에서 조절. 기본 2(총 3노드)."
   type        = number
   default     = 2
 }

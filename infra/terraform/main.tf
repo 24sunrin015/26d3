@@ -45,9 +45,7 @@ module "eks" {
   subnet_ids = module.vpc.private_subnets
 
   node_instance_type = var.node_instance_type
-  node_min_size      = var.node_min_size
-  node_max_size      = var.node_max_size
-  node_desired_size  = var.node_desired_size
+  stress_node_max    = var.stress_node_max
 
   enable_app_log_shipping = var.enable_app_log_shipping
 }
