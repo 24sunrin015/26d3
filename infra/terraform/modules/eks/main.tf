@@ -107,13 +107,13 @@ resource "aws_eks_addon" "coredns" {
   cluster_name = aws_eks_cluster.this.name
   addon_name   = "coredns"
   tags         = var.tags
-  depends_on   = [aws_eks_node_group.apps, aws_eks_node_group.stress]
+  depends_on   = [aws_eks_node_group.apps]
 }
 
 # =====================================================================
-# 관리형 노드그룹 2개 (t3.medium) — operation-strategy §4
-#  A(apps): user/product 격리, 고정 1대 (sleep이라 CPU 0, 스케일 불필요)
-#  B(stress): stress 격리, min1/max2 + taint로 stress 전용, CA가 스케일
+# 노드그룹 2개 (t3.medium) — operation-strategy §4
+#  A(apps): 관리형, user/product 격리, 고정 1대 (sleep이라 CPU 0, 스케일 불필요)
+#  B(stress): self-managed(stress-nodegroup.tf), min1/max2 + warm pool + taint, CA가 스케일
 # =====================================================================
 resource "aws_eks_node_group" "apps" {
   cluster_name    = aws_eks_cluster.this.name
@@ -141,60 +141,5 @@ resource "aws_eks_node_group" "apps" {
   ]
 }
 
-resource "aws_eks_node_group" "stress" {
-  cluster_name    = aws_eks_cluster.this.name
-  node_group_name = "stress"
-  node_role_arn   = aws_iam_role.node.arn
-  subnet_ids      = var.subnet_ids
-  instance_types  = [var.node_instance_type]
-
-  scaling_config {
-    min_size     = 1
-    max_size     = var.stress_node_max
-    desired_size = 1
-  }
-
-  update_config {
-    max_unavailable = 1
-  }
-
-  labels = { role = "stress" }
-
-  # stress 전용 노드: 이 taint를 toleration하는 stress pod만 스케줄됨
-  taint {
-    key    = "dedicated"
-    value  = "stress"
-    effect = "NO_SCHEDULE"
-  }
-
-  tags = var.tags
-
-  depends_on = [
-    aws_iam_role_policy_attachment.node,
-    aws_eks_addon.vpc_cni,
-  ]
-
-  lifecycle {
-    # 스케일링은 CA/HPA가 관리 → terraform이 되돌리지 않음
-    ignore_changes = [scaling_config[0].desired_size]
-  }
-}
-
-# Cluster Autoscaler 오토디스커버리 태그 — 스케일 대상은 stress 그룹뿐
-resource "aws_autoscaling_group_tag" "ca_enabled" {
-  autoscaling_group_name = aws_eks_node_group.stress.resources[0].autoscaling_groups[0].name
-  tag {
-    key                 = "k8s.io/cluster-autoscaler/enabled"
-    value               = "true"
-    propagate_at_launch = false
-  }
-}
-
-resource "aws_autoscaling_group_tag" "ca_cluster" {
-  autoscaling_group_name = aws_eks_node_group.stress.resources[0].autoscaling_groups[0].name
-  tag {
-    key                 = "k8s.io/cluster-autoscaler/${var.cluster_name}"
-    value               = "owned"
-    propagate_at_launch = false
-  }
-}
+# stress 노드그룹(B)은 warm pool을 위해 self-managed(ASG+launch template)로 분리한다.
+# → stress-nodegroup.tf (terraform aws_eks_node_group은 warmPoolConfig 미지원)

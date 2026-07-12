@@ -16,6 +16,6 @@ output "node_security_group_id" {
 output "node_asg_names" {
   value = concat(
     aws_eks_node_group.apps.resources[0].autoscaling_groups[*].name,
-    aws_eks_node_group.stress.resources[0].autoscaling_groups[*].name,
+    [aws_autoscaling_group.stress.name],
   )
 }
