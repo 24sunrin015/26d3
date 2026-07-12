@@ -1,6 +1,5 @@
 variable "prefix" { type = string }
 variable "region" { type = string }
-variable "cluster_name" { type = string }
 variable "alb_arn_suffix" { type = string }
 variable "target_group_arn_suffixes" {
   type = map(string) # { user=..., product=..., stress=... }

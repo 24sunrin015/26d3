@@ -15,12 +15,10 @@ resource "aws_iam_instance_profile" "stress_node" {
   role = aws_iam_role.node.name
 }
 
-# API auth 모드: 노드 역할에 EC2_LINUX access entry로 노드 조인 권한 부여
-resource "aws_eks_access_entry" "stress_node" {
-  cluster_name  = aws_eks_cluster.this.name
-  principal_arn = aws_iam_role.node.arn
-  type          = "EC2_LINUX"
-}
+# NOTE: 노드 조인 권한(access entry)은 별도로 만들지 않는다.
+# API_AND_CONFIG_MAP 모드에서 apps 관리형 노드그룹이 공유 node role(aws_iam_role.node)에
+# EC2_LINUX access entry를 자동 생성하며, self-managed stress도 같은 role을 쓰므로 그 entry로 커버됨.
+# (같은 principal에 access entry를 또 만들면 ResourceInUseException으로 apply 실패)
 
 # AL2023 nodeadm 부트스트랩 — role=stress 라벨 + dedicated=stress taint로 조인
 locals {
@@ -111,8 +109,6 @@ resource "aws_autoscaling_group" "stress" {
     ignore_changes = [desired_capacity] # CA가 관리
   }
 
-  depends_on = [
-    aws_eks_access_entry.stress_node,
-    aws_eks_node_group.apps, # 컨트롤플레인/코어 애드온 준비 후 조인
-  ]
+  # apps 관리형 NG가 공유 node role의 access entry를 자동 생성 → 그 뒤에 조인
+  depends_on = [aws_eks_node_group.apps]
 }

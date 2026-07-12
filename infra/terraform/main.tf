@@ -169,7 +169,6 @@ module "monitoring" {
 
   prefix                    = local.prefix
   region                    = var.region
-  cluster_name              = local.cluster_name
   alb_arn_suffix            = module.alb.alb_arn_suffix
   target_group_arn_suffixes = module.alb.target_group_arn_suffixes
   rds_identifier            = module.rds.identifier
