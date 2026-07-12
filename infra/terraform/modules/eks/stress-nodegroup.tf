@@ -1,7 +1,9 @@
 # =====================================================================
 # stress 노드그룹 B — self-managed (warm pool 위해)
 # terraform aws_eks_node_group은 warmPoolConfig 미지원 → ASG를 직접 만들어 warm_pool 부착.
-# warm pool: 평시 Stopped 인스턴스 1대 대기(cost 0, running 카운트 제외) → CA 스케일 시 즉시 join.
+# 정석(aws-samples/eks-node-group-with-warm-pool): warm pool로 '진입'하는 인스턴스는
+# 클러스터에 join하지 않고(cloud_final_modules always + lifecycle hook + 상태분기), InService로
+# '승격'될 때만 nodeadm join. → 평시 Stopped 1대(cost 0, NotReady 노드 안 생김), 스케일 시 즉시 join.
 # =====================================================================
 
 # EKS 최적화 AL2023 AMI (클러스터 버전에 맞춰 SSM에서 조회)
@@ -13,6 +15,24 @@ data "aws_ssm_parameter" "al2023" {
 resource "aws_iam_instance_profile" "stress_node" {
   name = "${var.cluster_name}-stress-node"
   role = aws_iam_role.node.name
+}
+
+# warm pool 부트스트랩 스크립트가 자기 lifecycle 상태를 조회하고 hook을 완료하는 데 필요
+resource "aws_iam_policy" "stress_lifecycle" {
+  name = "${var.cluster_name}-stress-lifecycle"
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Effect   = "Allow"
+      Action   = ["autoscaling:DescribeAutoScalingInstances", "autoscaling:CompleteLifecycleAction"]
+      Resource = "*"
+    }]
+  })
+}
+
+resource "aws_iam_role_policy_attachment" "stress_lifecycle" {
+  role       = aws_iam_role.node.name
+  policy_arn = aws_iam_policy.stress_lifecycle.arn
 }
 
 # NOTE: 노드 조인 권한(access entry)은 별도로 만들지 않는다.
@@ -69,6 +89,16 @@ resource "aws_autoscaling_group" "stress" {
     pool_state                  = "Stopped"
     min_size                    = 1
     max_group_prepared_capacity = var.stress_node_max
+  }
+
+  # launching hook: 인스턴스를 Pending:Wait(또는 Warmed:Pending:Wait)에 잡아두고,
+  # user-data 스크립트가 lifecycle 상태를 보고 join 여부 결정 후 CONTINUE 신호를 보낼 시간을 준다.
+  # 이게 있어야 warm pool 진입 인스턴스가 join 없이 정지되고, 승격 시에만 join한다.
+  initial_lifecycle_hook {
+    name                 = "stress-launch"
+    lifecycle_transition = "autoscaling:EC2_INSTANCE_LAUNCHING"
+    default_result       = "ABANDON"
+    heartbeat_timeout    = 600
   }
 
   # EKS 노드 인식

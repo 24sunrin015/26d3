@@ -1,9 +1,35 @@
+Content-Type: multipart/mixed; boundary="==BOUND=="
 MIME-Version: 1.0
-Content-Type: multipart/mixed; boundary="//"
 
---//
-Content-Type: application/node.eks.aws
+--==BOUND==
+Content-Type: text/cloud-config; charset="us-ascii"
 
+#cloud-config
+# 스크립트를 매 부팅마다 실행 → warm pool 인스턴스가 활성화(start)될 때 재실행되어 그때 join
+cloud_final_modules:
+- [scripts-user, always]
+
+--==BOUND==
+Content-Type: text/x-shellscript; charset="us-ascii"
+
+#!/bin/bash
+# self-managed EKS + warm pool 정석(aws-samples/eks-node-group-with-warm-pool 적응, AL2023 nodeadm):
+# warm pool로 '진입'하는 인스턴스는 클러스터에 join하지 않고, InService로 '승격'될 때만 join한다.
+set -x
+exec > >(tee /var/log/user-data.log | logger -t user-data -s 2>/dev/console) 2>&1
+
+command -v aws >/dev/null 2>&1 || dnf install -y awscli
+
+TOKEN=$(curl -sX PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 3600")
+md() { curl -s -H "X-aws-ec2-metadata-token: $TOKEN" "http://169.254.169.254/latest/$1"; }
+REGION=$(md meta-data/placement/region)
+IID=$(md meta-data/instance-id)
+
+ASG=$(aws autoscaling describe-auto-scaling-instances --instance-ids "$IID" --region "$REGION" --query 'AutoScalingInstances[].AutoScalingGroupName' --output text)
+STATE=$(aws autoscaling describe-auto-scaling-instances --instance-ids "$IID" --region "$REGION" --query 'AutoScalingInstances[].LifecycleState' --output text)
+
+# nodeadm이 사용할 NodeConfig (role=stress 라벨 + dedicated=stress taint로 조인)
+cat >/etc/eks-nodeconfig.yaml <<'NODECONFIG'
 apiVersion: node.eks.aws/v1alpha1
 kind: NodeConfig
 spec:
@@ -16,5 +42,33 @@ spec:
     flags:
       - --node-labels=role=stress
       - --register-with-taints=dedicated=stress:NoSchedule
+NODECONFIG
 
---//--
+# 분기: Warmed:* = warm pool 진입 → join 스킵(정지 예정). 그 외(Pending/InService) → join.
+case "$STATE" in
+  *Warmed*)
+    echo "entering warm pool ($STATE) — skip cluster join"
+    ;;
+  *)
+    echo "going in-service ($STATE) — joining cluster via nodeadm"
+    nodeadm init -c file:///etc/eks-nodeconfig.yaml
+    ;;
+esac
+
+# launching lifecycle hook 완료: *:Wait 상태가 되면 CONTINUE 신호(안 하면 ASG가 hook 타임아웃까지 대기)
+for i in $(seq 1 120); do
+  S=$(aws autoscaling describe-auto-scaling-instances --instance-ids "$IID" --region "$REGION" --query 'AutoScalingInstances[].LifecycleState' --output text)
+  case "$S" in
+    *Wait*)
+      aws autoscaling complete-lifecycle-action \
+        --lifecycle-hook-name stress-launch \
+        --auto-scaling-group-name "$ASG" \
+        --lifecycle-action-result CONTINUE \
+        --instance-id "$IID" --region "$REGION"
+      break
+      ;;
+    *) sleep 5 ;;
+  esac
+done
+
+--==BOUND==--
