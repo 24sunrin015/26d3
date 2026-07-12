@@ -13,10 +13,10 @@ variable "endpoint_public_access" {
   type    = bool
   default = true
 }
-variable "enable_container_insights" {
+variable "enable_app_log_shipping" {
   type        = bool
-  default     = true
-  description = "Container Insights(amazon-cloudwatch-observability): 파드 실시간 메트릭+로그. false면 로그는 standalone Fluent Bit로 폴백."
+  default     = false
+  description = "앱 컨테이너 로그를 CloudWatch로 보내는 경량 Fluent Bit(옵션). 기본 false — 관측은 metrics-server + agentless 로그로 충분(operation-strategy §6)."
 }
 variable "node_instance_type" { type = string }
 variable "node_min_size" { type = number }

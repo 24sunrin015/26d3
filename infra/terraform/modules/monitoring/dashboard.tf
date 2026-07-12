@@ -19,16 +19,6 @@ locals {
     ["AWS/ApplicationELB", "HealthyHostCount", "TargetGroup", var.target_group_arn_suffixes[k], "LoadBalancer", var.alb_arn_suffix, { label = k }]
   ]
 
-  # 앱별 파드 CPU/메모리 (Container Insights) — 경기 중 스케일 조절 신호. CI 활성 시 값 채워짐.
-  pod_cpu_metrics = [
-    for k in local.tg_keys :
-    ["ContainerInsights", "pod_cpu_utilization", "ClusterName", var.cluster_name, "Namespace", "default", "Service", k, { label = k }]
-  ]
-  pod_mem_metrics = [
-    for k in local.tg_keys :
-    ["ContainerInsights", "pod_memory_utilization", "ClusterName", var.cluster_name, "Namespace", "default", "Service", k, { label = k }]
-  ]
-
   dashboard_body = jsonencode({
     widgets = [
       {
@@ -102,22 +92,6 @@ locals {
             ["AWS/WAFV2", "AllowedRequests", "WebACL", "${var.prefix}-waf-web-acl", "Region", var.region, "Rule", "ALL", { label = "allowed", yAxis = "right" }]
           ],
           view = "timeSeries", stat = "Sum", period = 60, region = var.region
-        }
-      },
-      {
-        type = "metric", x = 0, y = 18, width = 12, height = 6,
-        properties = {
-          title   = "앱별 파드 CPU% (Container Insights)",
-          metrics = local.pod_cpu_metrics,
-          view    = "timeSeries", stat = "Average", period = 60, region = var.region
-        }
-      },
-      {
-        type = "metric", x = 12, y = 18, width = 12, height = 6,
-        properties = {
-          title   = "앱별 파드 메모리% (Container Insights)",
-          metrics = local.pod_mem_metrics,
-          view    = "timeSeries", stat = "Average", period = 60, region = var.region
         }
       }
     ]

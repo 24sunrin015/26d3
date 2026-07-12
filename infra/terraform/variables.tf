@@ -102,8 +102,9 @@ variable "db_allocated_storage" {
 }
 
 # ---- 관측성 ----
-variable "enable_container_insights" {
-  description = "Container Insights(파드 실시간 메트릭+로그). 경기 중 스케일 조절용. false면 로그는 Fluent Bit 폴백."
+# CI(Container Insights)는 미채택(operation-strategy §6). 관측은 metrics-server + agentless 로그.
+variable "enable_app_log_shipping" {
+  description = "앱 컨테이너 로그 CloudWatch 전송(경량 Fluent Bit, 옵션). 기본 false."
   type        = bool
-  default     = true
+  default     = false
 }
