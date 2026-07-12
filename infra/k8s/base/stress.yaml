@@ -71,7 +71,9 @@ spec:
     - type: Resource
       resource:
         name: cpu
-        target: { type: Utilization, averageUtilization: 70 }
+        # 85% — stress는 CPU 거의 다 써도 SLO 안 깨짐(실측: 700k util 79.6%인데 perf 100%).
+        # 70%면 조기 발화해 불필요 노드로 cost 낭비. 900k(util~101%, 붕괴임박) 전엔 발화(operation-strategy §6-4).
+        target: { type: Utilization, averageUtilization: 85 }
   behavior:
     scaleUp:
       stabilizationWindowSeconds: 0 # CPU 급증 즉시 스케일(→ Pending → CA 노드 증설)
