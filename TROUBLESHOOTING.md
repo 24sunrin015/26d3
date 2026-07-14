@@ -43,7 +43,7 @@
 - **슬로우쿼리 관측**: `long_query_time=0.1`(100ms 초과 로깅) + `error`/`slowquery` 로그를 CloudWatch로 수출(`/aws/rds/instance/<id>/slowquery`). 경기 중 병목 쿼리 즉시 확인. 커버링 인덱스가 안 먹으면 `EXPLAIN`으로 확인.
 - **MYSQL_HOST에 엔진명 넣지 말 것**: 순수 주소(RDS endpoint address)만. `terraform output rds_address`가 그 값.
 - **테이블 자동 적용**: `terraform apply` 시 `null_resource.db_tables`가 RDS·클러스터 ready 후 in-cluster mysql 파드(`db-tables-init`)로 `modules/rds/tables/*.sql`을 적용한다(스키마만). 실패 시: 노드 Ready·kubeconfig·RDS 도달성 확인. 스키마 SQL 수정하면 다음 apply에 자동 재적용(트리거=파일 해시).
-- **데이터(load_user.dump)는 자동 적재 안 함**(의도적). 시드는 수동으로: `provided/`에 dump를 두고 in-cluster 파드로 `mysql … < load_user.dump` 실행.
+- **데이터(load_user.dump)는 apply 때 자동 적재 안 함**(의도적). **`make db-seed`** 로 적재 — `provided/load_user.dump`를 in-cluster 파드로 넣고, dump가 user 테이블을 DROP+CREATE해 날아가는 커버링 인덱스(idx_email_cover)를 idempotent 복구 + `ANALYZE`까지 한다.
 
 ## 비용(노드 수)
 
@@ -62,7 +62,7 @@
 경기 중 핵심 결정은 하나 — "stress가 CPU를 갉기 시작했나 → 3번째 노드(stress_node_max)로 갈까". CloudWatch(1분+ 지연)로는 60초 붕괴를 놓치므로 **metrics-server로만** 판단한다.
 
 - **관측**: `kubectl top pods -l app=stress` / `k9s` / `kubectl top nodes` / `kubectl get hpa -w`. metrics-server는 kubelet 직독이라 지연 없음, 모든 노드 커버.
-- **stress가 튀면**: 이미 HPA(target 70%)→Pending→CA가 자동으로 stress 노드를 2대까지 올린다. 수동 개입 필요 시 `kubectl edit hpa stress`(max↑) 또는 `stress_node_max`↑ 후 `make apply`.
+- **stress가 튀면**: 이미 HPA(target 85%)→Pending→CA가 자동으로 stress 노드를 2대까지 올린다. 수동 개입 필요 시 `kubectl edit hpa stress`(max↑) 또는 `stress_node_max`↑ 후 `make apply`.
 - **비용 판단**: `kubectl top nodes`로 stress 노드가 계속 포화면 length가 흉악한 것 → 3노드 허용(cost 2점 손실 < stress 5점 방어, §5). 순하면 2노드 유지.
 - user/product는 sleep이라 CPU ~0 → 스케일 불필요, 노드 A 1대 고정.
 

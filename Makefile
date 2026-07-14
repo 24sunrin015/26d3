@@ -6,7 +6,7 @@ BINARIES    := user product stress
 export TF_VAR_student_id := $(STUDENT_ID)
 
 .PHONY: check-id check-bin up down init plan apply destroy fmt validate \
-        images deploy k8s k8s-down endpoint upload-images
+        images deploy k8s k8s-down endpoint upload-images db-seed
 
 # ── 이중 blocker (현장 사고 방지) ─────────────────────────────
 check-id:
@@ -65,6 +65,10 @@ k8s: deploy
 
 k8s-down: check-id
 	kubectl delete -k $(K8S_OVERLAY) --ignore-not-found || true
+
+# DB 데이터 시드 (provided/load_user.dump → RDS, in-cluster 파드). 인덱스 복구 + ANALYZE 포함
+db-seed: check-id
+	bash scripts/db-seed.sh
 
 # 제공 이미지 대량 업로드 (S3). 소스 기본값 provided/images
 upload-images: check-id
