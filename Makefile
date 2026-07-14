@@ -2,8 +2,6 @@ INFRA_DIR   := infra/terraform
 K8S_OVERLAY := infra/k8s/overlays/prod
 PROVIDED    := provided
 BINARIES    := user product stress
-# DB 시드 덤프 경로 (make db-seed DUMP=provided/<파일> 로 덮어쓰기)
-DUMP        ?= provided/load_user.dump
 
 export TF_VAR_student_id := $(STUDENT_ID)
 
@@ -69,9 +67,10 @@ k8s-down: check-id
 	kubectl delete -k $(K8S_OVERLAY) --ignore-not-found || true
 
 # DB 데이터 시드 (덤프 → RDS, in-cluster 파드). 인덱스 복구 + ANALYZE 포함.
-# 파일명 지정: make db-seed DUMP=provided/<파일>
+# 덤프 지정(선택): make db-seed ARGS="--user-dump=provided/load_user.dump --product-dump=provided/load_product.dump"
+# ARGS 없으면 아무것도 적재 안 함(덤프 없는 날 대비).
 db-seed: check-id
-	bash scripts/db-seed.sh $(DUMP)
+	bash scripts/db-seed.sh $(ARGS)
 
 # 제공 이미지 대량 업로드 (S3). 소스 기본값 provided/images
 upload-images: check-id
