@@ -8,7 +8,7 @@
 2. `make apply` — 인프라 전체(VPC/EKS/RDS/S3/ECR/ALB/WAF/CloudFront/monitoring) + 클러스터 애드온(LB Controller·Cluster Autoscaler·metrics-server, helm_release로 apply 때 같이 설치됨) + DB 테이블 자동 생성.
 3. `make images` — provided/ 바이너리 도커 빌드 → ECR 푸시.
 4. `make deploy` — 앱 배포(kubectl apply -k). TargetGroupBinding으로 ALB 연결.
-5. DB 데이터 시드 — `load_user.dump`를 RDS에 수동 적재(자동 적재 안 함, TROUBLESHOOTING 참고).
+5. `make db-seed` — provided/load_user.dump를 RDS에 적재(+ 커버링 인덱스 복구·ANALYZE). apply 때 자동 적재 안 함.
 6. `make upload-images` — 제공 이미지 S3 업로드.
 7. `make endpoint` — 채점 플랫폼에 제출할 단일 엔드포인트 출력.
 
@@ -18,6 +18,7 @@ export STUDENT_ID=<비번호>   # 안 하면 모든 make가 막힘
 make apply
 make images
 make deploy
+make db-seed
 make upload-images
 make endpoint
 
