@@ -24,6 +24,9 @@ tools/disassembly/disassembly/
 # assembly-prettier 툴 출력물 (pseudocode 복원 결과 — 커밋 금지)
 tools/assembly-prettier/prettified/
 
+# 내부 운영 전략 판단 근거 (커밋 금지)
+analysis/operation-strategy.md
+
 # OS/editor
 .DS_Store
 *.swp
