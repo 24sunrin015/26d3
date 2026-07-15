@@ -25,6 +25,27 @@ make endpoint
 make down        # 전체 철거 (terraform destroy)
 ```
 
+## 동작 확인용 curl 예시
+
+```bash
+export CF_DOMAIN=$(make endpoint | tail -1)   # 또는 make endpoint 출력값을 직접 export
+
+curl -i "$CF_DOMAIN/healthcheck"
+
+curl -i "$CF_DOMAIN/v1/user" \
+  -X POST -H 'Content-Type: application/json' \
+  -d '{"username":"tester","email":"tester@example.com"}'
+
+curl -i "$CF_DOMAIN/v1/product?id=1"
+
+RANDOM_IMAGE=$(aws s3 ls "s3://$(terraform -chdir=infra/terraform output -raw s3_bucket)/" \
+  --recursive | awk '{print $NF}' | shuf -n 1)
+curl -I "$CF_DOMAIN/images/$RANDOM_IMAGE"
+
+curl -i "$CF_DOMAIN/v1/none"          # 미제공 경로 → 404 기대
+curl -i "$CF_DOMAIN/v1/user' OR '1'='1"  # 비정상 요청 → WAF 403 기대
+```
+
 ## 안전장치 (현장 사고 방지)
 
 - STUDENT_ID 미설정 시 모든 `make` 즉시 중단.
