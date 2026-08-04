@@ -323,13 +323,19 @@ resource "aws_wafv2_regex_pattern_set" "blocked_user_agents" {
   name  = "${var.prefix}-blocked-user-agents"
   scope = "REGIONAL"
 
-  # ⚠️ 정상 UA(python/aiohttp, curl, mozilla/chrome)는 절대 포함 금지
-  regular_expression { regex_string = "sqlmap|nikto|nmap|masscan|zgrab|nuclei|wpscan" }
-  regular_expression { regex_string = "dirbuster|gobuster|feroxbuster|ffuf|dirb|wfuzz" }
-  regular_expression { regex_string = "hydra|havij|acunetix|nessus|metasploit|burpsuite|openvas" }
-  regular_expression { regex_string = "(bot|crawler|spider|scraper)([^a-z]|$)" }
-  regular_expression { regex_string = "(attack|malicious|chaos|exploit|payload|inject)" }
-  regular_expression { regex_string = "(flood|stress-test|stresser|load-?tester|ddos)" }
+  # ⚠️ 정상 UA(python/aiohttp, curl, wget, mozilla/chrome, kube-probe,
+  #    ELB-HealthChecker, Amazon CloudFront)는 절대 포함 금지.
+  #    특히 kube-probe는 차단되면 파드가 재시작되어 availability가 붕괴한다.
+  regular_expression { regex_string = "sqlmap|nikto|nmap|masscan|zgrab|zmap|nuclei|wpscan" }
+  regular_expression { regex_string = "gobuster|feroxbuster|ffuf|dirbuster|wfuzz|dirsearch|katana|hakrawler|gospider|amass" }
+  regular_expression { regex_string = "hydra|havij|acunetix|nessus|metasploit|burpsuite|openvas|qualys|netsparker|appscan|nexpose" }
+  regular_expression { regex_string = "slowloris|hulk|goldeneye|loic|hoic|ddos|loadgen|stress" }
+  regular_expression { regex_string = "bot|attack|malicious|exploit|payload|inject|intrud|breach" }
+  regular_expression { regex_string = "backdoor|rootkit|trojan|malware|ransom|scanner|fuzzer|intruder|recon|brute" }
+  regular_expression { regex_string = "hack|hax|pwn|crack|redteam|pentest|cyberattack" }
+  regular_expression { regex_string = "webshell|reverseshell|bindshell|shellcode|mimikatz|cobaltstrike|empire|sliver|havoc|bloodhound" }
+  regular_expression { regex_string = "rce|lfi|rfi|sqli|xss|ssrf|xxe|cmdi|cve|zeroday|0day" }
+  regular_expression { regex_string = "phish|spoof|steal|exfil|keylog|credential|bypass|evasion|botnet|mirai|emotet|qbot" }
 }
 
 # =====================================================================
