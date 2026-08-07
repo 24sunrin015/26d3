@@ -165,31 +165,9 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
 
-  # --- 커스텀 30: 스캐너/취약경로 차단 (API 경로와 무관한 명백한 스캔) ---
-  rule {
-    name     = "MaliciousPathBlock"
-    priority = 30
-    action {
-      block {}
-    }
-    statement {
-      regex_pattern_set_reference_statement {
-        arn = aws_wafv2_regex_pattern_set.malicious_paths.arn
-        field_to_match {
-          uri_path {}
-        }
-        text_transformation {
-          priority = 0
-          type     = "LOWERCASE"
-        }
-      }
-    }
-    visibility_config {
-      cloudwatch_metrics_enabled = true
-      metric_name                = "MaliciousPathBlock"
-      sampled_requests_enabled   = true
-    }
-  }
+  # NOTE: 스캐너/취약경로(wp-admin, .env 등) 차단 룰은 의도적으로 배제.
+  # task.md §7: "제공하는 API 외의 요청은 404" — 이런 경로는 전부 미제공 경로라
+  # 403으로 막으면 그 자체로 룰 위반(2025 PathWhitelist와 동일 실수). ALB 기본 404로 흘려보낸다.
 
   # --- 커스텀 40: 이메일 형식 검증 (/v1/user POST, 유효 이메일 없으면 403) ---
   rule {
@@ -295,20 +273,6 @@ resource "aws_wafv2_web_acl" "main" {
 # =====================================================================
 # 정규식 패턴 세트 (세트당 최대 10패턴 → 주제별 분리로 커버리지 확장)
 # =====================================================================
-resource "aws_wafv2_regex_pattern_set" "malicious_paths" {
-  name  = "${var.prefix}-malicious-paths"
-  scope = "REGIONAL"
-
-  regular_expression { regex_string = "/(wp-admin|wp-login|xmlrpc\\.php|wp-content|wordpress)" }
-  regular_expression { regex_string = "/(phpmyadmin|pma|adminer|myadmin|dbadmin)" }
-  regular_expression { regex_string = "/(\\.env|\\.git|\\.svn|\\.htaccess|\\.aws|\\.ssh|id_rsa)" }
-  regular_expression { regex_string = "/(actuator|solr|jenkins|struts|jmx-console|manager/html)" }
-  regular_expression { regex_string = "/(cgi-bin|shell|c99|r57|webshell|eval-stdin)" }
-  regular_expression { regex_string = "/(backup|dump\\.sql|database\\.sql|\\.bak|\\.old|\\.swp)" }
-  regular_expression { regex_string = "/(vendor/phpunit|console|_ignition|boaform|hnap)" }
-  regular_expression { regex_string = "\\.(php|asp|aspx|jsp|cgi)$" }
-}
-
 resource "aws_wafv2_regex_pattern_set" "email_pattern" {
   name  = "${var.prefix}-email-pattern"
   scope = "REGIONAL"

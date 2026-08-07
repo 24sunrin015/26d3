@@ -133,7 +133,7 @@
 | 4 | `AWSManagedRulesAmazonIpReputationList` | 관리형(신규) | 평판 나쁜 IP (25 WCU, 저렴) |
 | 10 | MethodWhitelist | block | GET/POST/PUT/HEAD/OPTIONS 외 차단 (2026은 PUT 추가) |
 | 20 | RateLimit | block(rate) | IP당 요청률 상한 — 플러딩/DoS성 억제 (rate-based, 2 WCU) |
-| 30 | MaliciousPathBlock | block | `wp-admin`, `phpmyadmin`, `.env`, `.git`, `.svn`, `config`, `/actuator`, `/.aws` 등 (단, 정상 API 경로 오탐 주의 — 이건 "존재하지 않는 스캔 경로"라 403이어도 무방하나, **404 요구와 상충 없게 스캐너성 경로에 한정**) |
+| ~~30~~ | ~~MaliciousPathBlock~~ | — | **폐기**: `wp-admin`/`.env`/`phpmyadmin` 등도 결국 "미제공 경로"라 §7 규정상 403이 아니라 404여야 함(2025 PathWhitelist와 동일 실수). 룰 제거, ALB 기본 404로 통과 |
 | 40 | UserEmailValidation | block | `/v1/user` POST + JSON body가 유효 이메일 정규식 **불일치** 시 차단 |
 | 50 | BlockedUserAgents | block | 명백한 악성 UA 시그니처 정규식 (aiohttp/curl 정상 UA는 **제외**) |
 | 60 | SuspiciousHeaders | block | 이상 헤더값(빈 Host, 비정상 Content-Length, 알려진 공격도구 헤더 등) 다수 패턴 |
