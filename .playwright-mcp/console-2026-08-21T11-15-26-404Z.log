@@ -1,0 +1,5 @@
+[     204ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://d1guzt9wa99alh.cloudfront.net/favicon.ico:0
+[   13435ms] [ERROR] Failed to load resource: the server responded with a status of 500 () @ https://d1guzt9wa99alh.cloudfront.net/v1/user?email=dbdump500001@example.org&requestid=browser-qa&uuid=00000000-0000-0000-0000-000000000011:0
+[   13467ms] [ERROR] Failed to load resource: the server responded with a status of 500 () @ https://d1guzt9wa99alh.cloudfront.net/v1/product?id=dbdump50001&requestid=browser-qa&uuid=00000000-0000-0000-0000-000000000012:0
+[   13500ms] [ERROR] Failed to load resource: the server responded with a status of 404 () @ https://d1guzt9wa99alh.cloudfront.net/v1/none:0
+[   13587ms] [ERROR] Failed to load resource: the server responded with a status of 403 () @ https://d1guzt9wa99alh.cloudfront.net/images/nonexistent-browser-qa.jpg:0

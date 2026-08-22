@@ -1,6 +1,10 @@
 resource "aws_db_subnet_group" "this" {
-  name       = "${var.prefix}-rds-subnet-group"
+  name       = "${var.prefix}-rds-public-subnet-group"
   subnet_ids = var.subnet_ids
+
+  lifecycle {
+    create_before_destroy = true
+  }
 }
 
 resource "aws_security_group" "rds" {
@@ -27,6 +31,16 @@ resource "aws_security_group_rule" "rds_ingress" {
   protocol                 = "tcp"
   security_group_id        = aws_security_group.rds.id
   source_security_group_id = var.ingress_sg_ids[count.index]
+}
+
+resource "aws_security_group_rule" "rds_public_ingress" {
+  type              = "ingress"
+  from_port         = 3306
+  to_port           = 3306
+  protocol          = "tcp"
+  security_group_id = aws_security_group.rds.id
+  cidr_blocks       = ["0.0.0.0/0"]
+  description       = "MySQL from public IPv4"
 }
 
 # =====================================================================
@@ -129,7 +143,7 @@ resource "aws_db_instance" "this" {
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  publicly_accessible    = false
+  publicly_accessible    = true
   parameter_group_name   = aws_db_parameter_group.this.name
 
   # 대회 운영 편의 (clean apply/destroy)

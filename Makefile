@@ -66,8 +66,8 @@ k8s: deploy
 k8s-down: check-id
 	kubectl delete -k $(K8S_OVERLAY) --ignore-not-found || true
 
-# DB 데이터 시드 (덤프 → RDS, in-cluster 파드). 인덱스 복구 + ANALYZE 포함.
-# 덤프 지정(선택): make db-seed ARGS="--user-dump=provided/load_user.dump --product-dump=provided/load_product.dump"
+# DB 데이터 시드 (로컬 mysql → public RDS).
+# 덤프 지정(선택): make db-seed ARGS="--user-dump=provided/load_user.sql --product-dump=provided/load_product.sql"
 # ARGS 없으면 아무것도 적재 안 함(덤프 없는 날 대비).
 db-seed: check-id
 	bash scripts/db-seed.sh $(ARGS)

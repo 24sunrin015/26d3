@@ -104,7 +104,7 @@ module "rds" {
   prefix            = local.prefix
   identifier        = "${local.prefix}-rds-instance" # 과제지 고정 이름
   vpc_id            = module.vpc.vpc_id
-  subnet_ids        = module.vpc.private_subnets
+  subnet_ids        = module.vpc.public_subnets
   instance_class    = var.db_instance_class
   engine_version    = var.db_engine_version
   db_name           = var.db_name
