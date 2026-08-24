@@ -10,3 +10,8 @@ variable "source_key" {
   type    = string
   default = "build-src/source.zip"
 }
+
+variable "additional_apps" {
+  type    = list(string)
+  default = []
+}

@@ -58,6 +58,17 @@ variable "apps_node_count" {
   default     = 1
 }
 
+variable "additional_apps" {
+  description = "현장 추가 Go 바이너리 이름. 각 이름은 /v1/<name> 경로와 ECR·EKS 리소스를 만든다."
+  type        = list(string)
+  default     = []
+
+  validation {
+    condition     = length(var.additional_apps) == length(distinct(var.additional_apps)) && alltrue([for app in var.additional_apps : can(regex("^[a-z][a-z0-9-]*$", app)) && !endswith(app, "-") && length(app) <= 23 && !contains(["user", "product", "stress", "hedger"], app)])
+    error_message = "additional_apps는 23자 이하의 중복 없는 소문자·숫자·하이픈 이름이어야 하며, 하이픈으로 끝나거나 기본 앱 이름을 사용할 수 없습니다."
+  }
+}
+
 # 노드그룹 2개 전략(operation-strategy §4): apps 고정 1대 + stress min1/max2.
 # 평시 2노드(baseline) → 피크 최대 3노드.
 variable "stress_node_max" {

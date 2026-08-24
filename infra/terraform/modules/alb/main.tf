@@ -1,5 +1,5 @@
 locals {
-  apps = ["user", "product", "stress"]
+  apps = concat(["user", "product", "stress"], var.additional_apps)
 }
 
 data "aws_caller_identity" "current" {}

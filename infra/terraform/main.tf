@@ -96,7 +96,7 @@ module "ecr" {
   source = "./modules/ecr"
 
   prefix = local.prefix
-  repos  = ["user", "product", "stress", "hedger"]
+  repos  = concat(["user", "product", "stress", "hedger"], var.additional_apps)
 }
 
 module "rds" {
@@ -137,7 +137,8 @@ module "alb" {
   vpc_id         = module.vpc.vpc_id
   public_subnets = module.vpc.public_subnets
   # ALB → 노드(8080)로의 트래픽 허용을 위해 노드 SG 참조
-  node_sg_id = module.eks.node_security_group_id
+  node_sg_id      = module.eks.node_security_group_id
+  additional_apps = var.additional_apps
 }
 
 # 이미지 빌드(CodeBuild) — 로컬 Docker 없이 make images가 provided/를 zip으로
@@ -149,6 +150,7 @@ module "codebuild" {
   prefix             = local.prefix
   region             = var.region
   source_bucket_name = module.alb.access_logs_bucket
+  additional_apps    = var.additional_apps
 }
 
 module "waf" {
@@ -177,7 +179,7 @@ module "monitoring" {
   prefix                    = local.prefix
   region                    = var.region
   alb_arn_suffix            = module.alb.alb_arn_suffix
-  target_group_arn_suffixes = module.alb.target_group_arn_suffixes
+  target_group_arn_suffixes = { for app, suffix in module.alb.target_group_arn_suffixes : app => suffix if contains(["user", "product", "stress"], app) }
   rds_identifier            = module.rds.identifier
   distribution_id           = module.cloudfront.distribution_id
   alb_logs_bucket           = module.alb.access_logs_bucket

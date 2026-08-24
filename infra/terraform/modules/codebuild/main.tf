@@ -85,6 +85,11 @@ resource "aws_codebuild_project" "image_build" {
       name  = "ECR_REGISTRY"
       value = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com"
     }
+
+    environment_variable {
+      name  = "APP_NAMES"
+      value = join(" ", concat(["user", "product", "stress"], var.additional_apps))
+    }
   }
 
   source {
@@ -100,8 +105,8 @@ resource "aws_codebuild_project" "image_build" {
         build:
           commands:
             - |
-              for f in provided/*; do
-                app="$(basename "$f")"
+              for app in $APP_NAMES; do
+                test -f "provided/$app"
                 repo="$ECR_REGISTRY/${var.prefix}-$app"
                 echo "==> build & push: $app -> $repo:latest"
                 docker build --platform linux/amd64 -f docker/Dockerfile --build-arg APP="$app" -t "$repo:latest" .
