@@ -52,6 +52,12 @@ variable "node_instance_type" {
   default     = "t3.medium"
 }
 
+variable "apps_node_count" {
+  description = "apps 노드그룹 대수. 기본 1, shared-node-group 비교 시 2로 설정."
+  type        = number
+  default     = 1
+}
+
 # 노드그룹 2개 전략(operation-strategy §4): apps 고정 1대 + stress min1/max2.
 # 평시 2노드(baseline) → 피크 최대 3노드.
 variable "stress_node_max" {

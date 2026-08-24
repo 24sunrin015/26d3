@@ -6,7 +6,7 @@ BINARIES    := user product stress
 export TF_VAR_student_id := $(STUDENT_ID)
 
 .PHONY: check-id check-bin up down init plan apply destroy fmt validate \
-        images deploy k8s k8s-down endpoint upload-images db-seed
+        images deploy deploy-shared k8s k8s-down endpoint upload-images db-seed
 
 # ── 이중 blocker (현장 사고 방지) ─────────────────────────────
 check-id:
@@ -59,6 +59,9 @@ images: check-bin
 
 deploy: check-id check-bin
 	bash infra/k8s/scripts/deploy.sh
+
+deploy-shared: check-id check-bin
+	OVL=infra/k8s/overlays/shared RESTART=false bash infra/k8s/scripts/deploy.sh
 
 # k8s = 앱 배포 (컨트롤러는 terraform apply의 helm_release로 이미 설치됨)
 k8s: deploy

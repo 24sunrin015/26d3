@@ -1,0 +1,10 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: stress
+spec:
+  template:
+    spec:
+      nodeSelector:
+        role: apps
+      tolerations: []

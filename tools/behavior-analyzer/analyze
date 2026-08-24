@@ -1,0 +1,419 @@
+#!/usr/bin/env python3
+"""바이너리 행동 종합 분석기.
+
+disasm이 뽑아둔 재료 디렉토리(symbols/strings/objdump_src/pseudocode/prettified)를
+읽어, 앱이 "실제로 어떻게 행동하는지"를 한 장으로 요약한다. AI를 쓰지 않는다.
+전부 정규식 기반 정적 탐지다.
+
+탐지하는 것:
+  1. 메타         — Go 버전·모듈·빌드 플래그
+  2. 엔트리/env   — os.Getenv/LookupEnv(필수 환경변수), flag/usage
+  3. 라우트       — r.GET/POST/PUT/DELETE + 경로
+  4. 요청 필드    — Query/GetHeader/Header.Get/Param/Bind (UA든 커스텀 헤더든 여기 드러남)
+  5. 응답         — c.JSON(http.Status…)/AbortWithStatus
+  6. 인위적 지연  — time.Sleep/time.After/Duration 상수
+  7. 확률 분기    — rand.Intn/Float64/Int63 + 임계 상수(0.4 등)
+  8. 자원 소모    — burn 루프·hot-path crypto
+  9. 공격 판별    — 문자열 비교(hex 복원 포함) + Contains/HasPrefix/EqualFold + 의심 토큰
+ 10. 외부 연동    — S3/RDS/SQL·크레덴셜 env
+
+입력은 disasm 출력 디렉토리. 없는 재료는 건너뛰고 있는 것만으로 분석한다.
+non-stripped(tier A/B)면 objdump_src의 소스 라인이, stripped(tier C)면 pseudocode가 근거가 된다.
+
+usage: analyze <disasm_output_dir> [-o OUTDIR]
+  OUTDIR 생략 시 <disasm_output_dir> 안에 report.txt / findings.json 을 쓴다.
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import re
+import sys
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+@dataclass
+class Finding:
+    category: str
+    label: str
+    detail: str
+    source: str  # 근거 파일명
+    severity: str = "info"  # info | notable | attack
+
+
+@dataclass
+class Report:
+    binary: str = ""
+    tier: str = ""
+    findings: list[Finding] = field(default_factory=list)
+
+    def add(self, category: str, label: str, detail: str, source: str, severity: str = "info") -> None:
+        self.findings.append(Finding(category, label, detail, source, severity))
+
+    def by_category(self, category: str) -> list[Finding]:
+        return [f for f in self.findings if f.category == category]
+
+
+# ── 재료 로딩 ──────────────────────────────────────────────────────────
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text(errors="replace")
+    except OSError:
+        return ""
+
+
+def _objdump_blobs(root: Path) -> dict[str, str]:
+    """04_objdump_src/*.txt 를 {함수파일명: 본문}으로."""
+    out: dict[str, str] = {}
+    d = root / "04_objdump_src"
+    if d.is_dir():
+        for f in sorted(d.glob("*.txt")):
+            out[f.name] = _read(f)
+    return out
+
+
+def _pseudocode_blobs(root: Path) -> dict[str, str]:
+    out: dict[str, str] = {}
+    d = root / "pseudocode"
+    if d.is_dir():
+        for f in sorted(d.glob("*.c")):
+            out[f.name] = _read(f)
+    return out
+
+
+def _prettified_blobs(root: Path) -> dict[str, str]:
+    """disasm 하위에 prettified/ 가 있으면(웹 체인) readable.c 를 모은다."""
+    out: dict[str, str] = {}
+    for d in (root / "prettified", root.parent / "prettified"):
+        if d.is_dir():
+            for f in sorted(d.glob("*.readable.c")):
+                out[f.name] = _read(f)
+    return out
+
+
+# ── 탐지기 ──────────────────────────────────────────────────────────────
+
+ROUTE_RE = re.compile(r'\br\.(GET|POST|PUT|DELETE|PATCH|HEAD|OPTIONS|Any)\(\s*"([^"]+)"')
+FIELD_RES = [
+    ("query", re.compile(r'\bc\.Query\(\s*"([^"]+)"')),
+    ("query", re.compile(r'\bc\.DefaultQuery\(\s*"([^"]+)"')),
+    ("header", re.compile(r'\bc\.GetHeader\(\s*"([^"]+)"')),
+    ("header", re.compile(r'\.Header\.Get\(\s*"([^"]+)"')),
+    ("param", re.compile(r'\bc\.Param\(\s*"([^"]+)"')),
+    ("postform", re.compile(r'\bc\.PostForm\(\s*"([^"]+)"')),
+]
+BIND_RE = re.compile(r'\bc\.(ShouldBind\w*|Bind\w*)\(')
+ENV_RE = re.compile(r'\bos\.(Getenv|LookupEnv)\(\s*"([^"]+)"')
+STATUS_RE = re.compile(r'http\.(Status[A-Za-z]+)')
+ABORT_RE = re.compile(r'\bAbortWithStatus\w*\(')
+SLEEP_RE = re.compile(r'\btime\.(Sleep|After|NewTimer|Tick)\b')
+DURATION_RE = re.compile(r'\b(\d+)\s*\*\s*time\.(Millisecond|Second|Microsecond|Minute)\b')
+DURATION_UNIT_RE = re.compile(r'\btime\.(Millisecond|Second|Microsecond|Minute)\b')
+RAND_RE = re.compile(r'\b(?:math/)?rand\.(Intn|Int63n?|Float64|Float32|Int31n?)\b')
+FLOAT_LIT_RE = re.compile(r'\b0\.\d+\b')
+STRCMP_RE = re.compile(r'\b(strings\.(Contains|HasPrefix|HasSuffix|EqualFold|Index)|bytes\.(Equal|Contains))\b')
+
+# 헤더/토큰스러운 리터럴: "Attacker-Bot", "X-...", "bot", "attack" 등
+SUSPECT_TOKEN_RE = re.compile(
+    r'"((?:[A-Z][A-Za-z]+-)?(?:Attacker|Bot|Attack|Malicious|Abnormal|Hack|Evil|Scan)[A-Za-z-]*|'
+    r'X-[A-Za-z][A-Za-z0-9-]+)"'
+)
+# 복원된 문자열 비교(prettify가 남긴 주석/치환): [복원] var == "..."
+RESTORED_RE = re.compile(r'==\s*"([^"]{2,64})"')
+
+EXTERNAL_RES = [
+    ("S3", re.compile(r'\b(s3|S3|PutObject|GetObject|aws-sdk|manager\.Uploader|s3\.New)\b')),
+    ("RDS/MySQL", re.compile(r'\b(mysql|sql\.Open|db\.Connect|DSN|3306)\b')),
+    ("SQL", re.compile(r'\b(SELECT|INSERT INTO|UPDATE|DELETE FROM|ON DUPLICATE KEY)\b')),
+]
+CRED_ENV_RE = re.compile(
+    r'"((?:MYSQL|DB|AWS|S3)_[A-Z_]+|BUCKET[A-Z_]*|[A-Z]*PASSWORD[A-Z_]*|[A-Z]*SECRET[A-Z_]*)"'
+)
+
+
+def analyze(root: Path) -> Report:
+    rep = Report()
+
+    buildinfo = _read(root / "00_buildinfo.txt")
+    symbols = _read(root / "01_symbols.txt")
+    strings_txt = _read(root / "02_strings.txt")
+    strings_all = _read(root / "02_strings.all.txt")
+    report_md = _read(root / "REPORT.md")
+
+    obj = _objdump_blobs(root)
+    pseudo = _pseudocode_blobs(root)
+    pretty = _prettified_blobs(root)
+
+    # 소스 근거: non-stripped면 objdump_src(실제 소스 라인)가 최우선, 아니면 pseudocode
+    code_sources: dict[str, str] = {}
+    code_sources.update({f"objdump/{k}": v for k, v in obj.items()})
+    code_sources.update({f"pseudocode/{k}": v for k, v in pseudo.items()})
+    code_sources.update({f"prettified/{k}": v for k, v in pretty.items()})
+
+    # tier
+    m = re.search(r"tier:\s*\**([ABC][^\n*]*)", report_md)
+    if m:
+        rep.tier = m.group(1).strip()
+
+    # 대상 바이너리명
+    m = re.search(r"리포트\s*—\s*(\S+)", report_md) or re.search(r"path=(\S+)", buildinfo)
+    if m:
+        rep.binary = m.group(1)
+
+    _detect_meta(rep, buildinfo)
+    _detect_routes(rep, code_sources, strings_txt, strings_all)
+    _detect_fields(rep, code_sources)
+    _detect_env(rep, code_sources, strings_txt)
+    _detect_responses(rep, code_sources)
+    _detect_delays(rep, code_sources)
+    _detect_probability(rep, code_sources)
+    _detect_burn(rep, symbols, code_sources)
+    _detect_attack(rep, code_sources, strings_all)
+    _detect_external(rep, code_sources, strings_txt, symbols)
+
+    return rep
+
+
+def _uniq_hits(sources: dict[str, str], regex: re.Pattern, group: int = 1) -> dict[str, str]:
+    """정규식 매치 → {값: 첫 근거파일}. 순서 보존."""
+    out: dict[str, str] = {}
+    for name, text in sources.items():
+        for m in regex.finditer(text):
+            val = m.group(group)
+            if val not in out:
+                out[val] = name
+    return out
+
+
+def _detect_meta(rep: Report, buildinfo: str) -> None:
+    for key, tag in (("go\t", "go"), ("path\t", "module"), ("mod\t", "main-module")):
+        for line in buildinfo.splitlines():
+            s = line.strip()
+            if s.startswith(key.strip()):
+                parts = s.split(None, 2)
+                if len(parts) >= 2:
+                    val = parts[-1] if key == "go\t" else parts[1]
+                    rep.add("meta", tag, f"{tag}={val}", "00_buildinfo.txt")
+                break
+    for line in buildinfo.splitlines():
+        if "build" in line and ("-ldflags" in line or "CGO" in line or "GOARCH" in line):
+            rep.add("meta", "build", line.strip()[:120], "00_buildinfo.txt")
+
+
+def _detect_routes(rep: Report, sources: dict[str, str], strings_txt: str, strings_all: str) -> None:
+    hits: dict[str, str] = {}
+    for name, text in sources.items():
+        for m in ROUTE_RE.finditer(text):
+            key = f"{m.group(1)} {m.group(2)}"
+            hits.setdefault(key, name)
+    # objdump/pseudo에서 못 잡으면 strings에서 경로 흔적 (disasm 큐레이션과 같은 경계 패턴)
+    if not hits:
+        for path in re.findall(r'/(?:v1/(?:user|product|stress)|healthcheck|images)(?![A-Za-z0-9_])',
+                               strings_txt + strings_all):
+            hits.setdefault(f"? {path}", "02_strings.txt")
+    for route, src in hits.items():
+        rep.add("routes", "라우트", route, src)
+
+
+def _detect_fields(rep: Report, sources: dict[str, str]) -> None:
+    for kind, regex in FIELD_RES:
+        for val, src in _uniq_hits(sources, regex).items():
+            rep.add("fields", f"요청 {kind}", val, src, "notable")
+    # Bind 계열은 구조체 바인딩(바디 전체) 신호
+    for name, text in sources.items():
+        if BIND_RE.search(text):
+            rep.add("fields", "bind", "ShouldBind/Bind (json body struct)", name)
+            break
+
+
+def _detect_env(rep: Report, sources: dict[str, str], strings_txt: str) -> None:
+    for val, src in _uniq_hits(sources, ENV_RE, group=2).items():
+        rep.add("env", "필수 환경변수", val, src, "notable")
+
+
+def _detect_responses(rep: Report, sources: dict[str, str]) -> None:
+    for val, src in _uniq_hits(sources, STATUS_RE).items():
+        rep.add("responses", "응답 코드", val, src)
+    for name, text in sources.items():
+        if ABORT_RE.search(text):
+            rep.add("responses", "abort", "AbortWithStatus", name, "notable")
+            break
+
+
+def _detect_delays(rep: Report, sources: dict[str, str]) -> None:
+    for name, text in sources.items():
+        if not SLEEP_RE.search(text):
+            continue
+        durs = {f"{m.group(1)}*{m.group(2)}" for m in DURATION_RE.finditer(text)}
+        units = {m.group(1) for m in DURATION_UNIT_RE.finditer(text)}
+        detail = "time.Sleep/After"
+        if durs:
+            detail += "  delay=" + ",".join(sorted(durs))
+        elif units:
+            detail += "  unit=" + ",".join(sorted(units))
+        rep.add("delays", "sleep", detail, name, "notable")
+
+        # 같은 함수 안에 sleep + (rand | 조건분기)가 함께 있으면 확률·조건부 지연 주입.
+        # 함수명(maybeSleep/jitter/throttle 등)에 의존하지 않고 코드 패턴으로 잡는다.
+        rand_fns = {m.group(1) for m in RAND_RE.finditer(text)}
+        has_branch = bool(re.search(r'\b(if|switch)\b', text))
+        if rand_fns:
+            gate = "rand=" + ",".join(sorted(rand_fns))
+            kind = "probabilistic-delay"
+        elif has_branch:
+            gate = "conditional (if/switch)"
+            kind = "conditional-delay"
+        else:
+            continue
+        floats = sorted(set(FLOAT_LIT_RE.findall(text)))[:6]
+        d = f"{kind}: sleep gated by {gate}"
+        if floats:
+            d += "  const=" + ",".join(floats)
+        rep.add("delays", kind, d, name, "notable")
+
+
+def _detect_probability(rep: Report, sources: dict[str, str]) -> None:
+    for name, text in sources.items():
+        if not RAND_RE.search(text):
+            continue
+        fns = {m.group(1) for m in RAND_RE.finditer(text)}
+        floats = sorted(set(FLOAT_LIT_RE.findall(text)))[:6]
+        detail = "rand=" + ",".join(sorted(fns))
+        if floats:
+            detail += "  const=" + ",".join(floats)
+        rep.add("probability", "rand", detail, name, "notable")
+
+
+def _detect_burn(rep: Report, symbols: str, sources: dict[str, str]) -> None:
+    for line in symbols.splitlines():
+        fn = line.strip()
+        if re.search(r'\.(burn|spin|hog|grind|cpuLoad|heavy)\b', fn, re.IGNORECASE):
+            rep.add("resource", "자원 소모 함수", fn, "01_symbols.txt", "notable")
+    # hot-path crypto (핸들러 안에서 aes/gcm/sha 반복)
+    for name, text in sources.items():
+        if re.search(r'\b(aes|gcm|sha256|sha512|pbkdf2|bcrypt)\b', text, re.IGNORECASE) and \
+           re.search(r'Handler|PostStress|for ', text):
+            rep.add("resource", "crypto", f"{name}: crypto in handler path", name)
+            break
+
+
+def _detect_attack(rep: Report, sources: dict[str, str], strings_all: str) -> None:
+    # 1) 문자열 비교 함수 사용 위치
+    for name, text in sources.items():
+        if STRCMP_RE.search(text):
+            fns = {m.group(1) for m in STRCMP_RE.finditer(text)}
+            rep.add("attack", "문자열 비교", ", ".join(sorted(fns)), name)
+    # 2) 복원된 == "..." 비교값 (prettify readable.c / annotated 주석에서)
+    seen: set[str] = set()
+    for name, text in sources.items():
+        if "prettified" not in name and "readable" not in name and "[복원]" not in text:
+            continue
+        for m in RESTORED_RE.finditer(text):
+            val = m.group(1)
+            if val in seen or len(val) < 3:
+                continue
+            seen.add(val)
+            sev = "attack" if SUSPECT_TOKEN_RE.search(f'"{val}"') else "info"
+            rep.add("attack", "복원된 비교 문자열", f'== "{val}"', name, sev)
+    # 3) 의심 토큰 리터럴 (전체 문자열에서)
+    for m in SUSPECT_TOKEN_RE.finditer(strings_all):
+        val = m.group(1)
+        if val in seen:
+            continue
+        seen.add(val)
+        rep.add("attack", "의심 토큰", f'"{val}"', "02_strings.all.txt", "attack")
+
+
+def _detect_external(rep: Report, sources: dict[str, str], strings_txt: str, symbols: str) -> None:
+    haystack = strings_txt + symbols + "\n".join(sources.values())
+    for label, regex in EXTERNAL_RES:
+        if regex.search(haystack):
+            rep.add("external", "external", label, "aggregate")
+    for val, _src in _uniq_hits({"strings": strings_txt}, CRED_ENV_RE).items():
+        rep.add("external", "크레덴셜 env 키", val, "02_strings.txt", "notable")
+
+
+# ── 출력 ────────────────────────────────────────────────────────────────
+
+CATEGORY_ORDER = [
+    ("meta", "meta"),
+    ("env", "env"),
+    ("routes", "routes"),
+    ("fields", "request-fields"),
+    ("responses", "responses"),
+    ("delays", "delays"),
+    ("probability", "probability"),
+    ("resource", "resource"),
+    ("attack", "string-compare"),
+    ("external", "external"),
+]
+
+
+def render_md(rep: Report) -> str:
+    binary = rep.binary or "-"
+    tier = (rep.tier or "-").split("(")[0].strip() or "-"
+    total = len(rep.findings)
+
+    out: list[str] = []
+    out.append(f"binary-behavior-report  target={binary}  tier={tier}  findings={total}")
+    out.append("=" * 72)
+
+    for cat, title in CATEGORY_ORDER:
+        items = rep.by_category(cat)
+        if not items:
+            continue
+        out.append("")
+        out.append(f"[{title}]")
+        for f in items:
+            detail = f.detail.replace("\t", " ")
+            out.append(f"  {detail:<48}  ({f.source})")
+
+    out.append("")
+    return "\n".join(out) + "\n"
+
+
+def render_json(rep: Report) -> str:
+    return json.dumps({
+        "binary": rep.binary,
+        "tier": rep.tier,
+        "findings": [
+            {"category": f.category, "label": f.label, "detail": f.detail,
+             "source": f.source, "severity": f.severity}
+            for f in rep.findings
+        ],
+    }, ensure_ascii=False, indent=2)
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description="binary behavior static analyzer (disasm output -> report.txt)")
+    ap.add_argument("indir", type=Path, help="disasm output directory")
+    ap.add_argument("-o", "--outdir", type=Path, help="output directory (default: indir)")
+    args = ap.parse_args()
+
+    if not args.indir.is_dir():
+        print(f"not a directory: {args.indir}", file=sys.stderr)
+        return 2
+    if not (args.indir / "REPORT.md").is_file() and not (args.indir / "01_symbols.txt").is_file():
+        print(f"not a disasm output dir (REPORT.md/01_symbols.txt missing): {args.indir}",
+              file=sys.stderr)
+        return 2
+
+    rep = analyze(args.indir)
+    outdir = args.outdir or args.indir
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    txt_path = outdir / "report.txt"
+    json_path = outdir / "findings.json"
+    txt_path.write_text(render_md(rep))
+    json_path.write_text(render_json(rep))
+
+    print(f"report   : {txt_path}")
+    print(f"findings : {json_path}")
+    print(f"findings={len(rep.findings)}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
