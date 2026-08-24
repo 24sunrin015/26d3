@@ -15,8 +15,10 @@ tfjson() { terraform -chdir="$TF_DIR" output -json "$1"; }
 
 REGION="$(tf region)"
 CLUSTER="$(tf cluster_name)"
-ASG="$(tf stress_node_asg_name)"
+ASG="$(aws autoscaling describe-auto-scaling-groups --query "AutoScalingGroups[?Tags[?Key=='Name' && Value=='${CLUSTER}-stress']].AutoScalingGroupName | [0]" --output text)"
 TG_STRESS="$(tfjson target_group_arns | jq -r .stress)"
+
+[[ -n "$ASG" && "$ASG" != "None" ]] || { echo "stress ASG를 찾지 못했습니다"; exit 1; }
 
 aws eks update-kubeconfig --name "$CLUSTER" --region "$REGION" >/dev/null
 
