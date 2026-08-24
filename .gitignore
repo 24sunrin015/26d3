@@ -17,6 +17,7 @@ infra/k8s/overlays/prod/config.env
 infra/k8s/overlays/prod/kustomization.yaml
 infra/k8s/overlays/prod/targetgroupbindings.yaml
 infra/k8s/overlays/prod/sa-patch.yaml
+infra/k8s/overlays/prod/extra-apps.yaml
 infra/k8s/overlays/shared/secret.env
 infra/k8s/overlays/shared/config.env
 infra/k8s/overlays/shared/kustomization.yaml
