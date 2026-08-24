@@ -286,7 +286,7 @@ kubectl -n default logs deploy/product --since=10m | tail -50
 
 | 순서 | 파일 | 하는 일 |
 | --- | --- | --- |
-| 1 | `docker/build-push.sh`, `infra/terraform/modules/ecr/main.tf` | 새 binary image build/push와 ECR repository 추가 |
+| 1 | `docker/build-push.sh`(`APPS=(...)`에 이름 추가), `infra/terraform/main.tf`(`module "ecr"`의 `repos`에 이름 추가) | 새 binary image build/push와 ECR repository 추가. 빌드는 로컬 Docker가 아니라 CodeBuild(`${prefix}-image-build`)가 한다 — `make images`가 `provided/*`+`docker/Dockerfile`을 zip으로 S3에 올리면 buildspec이 zip 안 `provided/*`를 자동 순회해 빌드/푸시하므로 buildspec 자체는 안 건드려도 된다. IAM도 `${prefix}-*` ECR 리포지토리 와일드카드라 새 repo가 생겨도 정책 수정 불필요. `make apply`(repo 생성) → `make images`(빌드/푸시) 순서 지킬 것 |
 | 2 | `infra/k8s/base/newapp.yaml` | Deployment, Service, probe, request/limit, nodeSelector, ServiceAccount, HPA 작성 |
 | 3 | `infra/terraform/modules/alb/main.tf` | 새 Target Group과 실제 route의 listener rule 추가. `/v2/product`는 기존 `/v1/${app}` 생성 규칙에 억지로 끼우지 않음 |
 | 4 | `infra/k8s/overlays/prod/targetgroupbindings.yaml.tmpl` | 새 Target Group ARN과 newapp Service 연결 |
@@ -296,6 +296,8 @@ kubectl -n default logs deploy/product --since=10m | tail -50
 | 8 | `infra/terraform/modules/eks/*` | apps 공유가 실패한 경우에만 newapp node group/CA tag 추가 |
 
 route가 `/v2/product`여도 Target Group/Service 이름은 `newapp`으로 고정해 기존 `product`와 분리한다. ALB가 path로 구분하므로 이름을 맞출 이유가 없다.
+
+**이미지 태그는 항상 `latest` 고정**(overlay `kustomization.yaml.tmpl`의 `images:` 블록)이라, binary를 다시 빌드해 push해도 `kubectl apply -k`만으로는 Deployment 스펙 문자열이 안 바뀌어 기존 Pod가 재생성되지 않는다. `newapp`도 같은 패턴을 쓴다면 재배포는 반드시 `kubectl rollout restart deployment/newapp`까지 실행(기존 3개 앱은 `infra/k8s/scripts/deploy.sh`가 자동으로 해줌 — `newapp` 추가 시 그 rollout restart 목록에도 추가할 것).
 
 ## 새 API 배포 전 통과선
 

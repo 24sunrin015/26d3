@@ -26,6 +26,25 @@ output "ecr_repository_urls" {
   value       = module.ecr.repository_urls
 }
 
+output "codebuild_project_name" {
+  description = "make images가 트리거하는 이미지 빌드 CodeBuild 프로젝트"
+  value       = module.codebuild.project_name
+}
+
+output "codebuild_source_bucket" {
+  description = "make images가 provided/ zip을 올리는 버킷 (ALB 로그 버킷 재사용)"
+  value       = module.alb.access_logs_bucket
+}
+
+output "codebuild_source_key" {
+  value = module.codebuild.source_key
+}
+
+output "dashboard_urls" {
+  description = "CloudWatch 대시보드 콘솔 URL 모음 (ops/svc/db/nodes/security)"
+  value       = module.monitoring.dashboard_urls
+}
+
 output "rds_address" {
   description = "앱 MYSQL_HOST (엔진명 미포함 주소)"
   value       = module.rds.address

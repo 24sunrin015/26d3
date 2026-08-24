@@ -10,3 +10,6 @@ output "private_subnets" {
 output "private_route_table_ids" {
   value = aws_route_table.private[*].id
 }
+output "nat_gateway_ids" {
+  value = aws_nat_gateway.this[*].id
+}

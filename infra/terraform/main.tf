@@ -45,6 +45,7 @@ module "eks" {
   subnet_ids = module.vpc.private_subnets
 
   node_instance_type = var.node_instance_type
+  apps_node_count    = var.apps_node_count
   stress_node_max    = var.stress_node_max
 
   enable_app_log_shipping = var.enable_app_log_shipping
@@ -139,6 +140,17 @@ module "alb" {
   node_sg_id = module.eks.node_security_group_id
 }
 
+# 이미지 빌드(CodeBuild) — 로컬 Docker 없이 make images가 provided/를 zip으로
+# 올리면 여기서 빌드해 ECR에 푸시. 소스 zip은 ALB 로그 버킷의 build-src/ 프리픽스 재사용
+# (버킷 신설 없이, IAM 정책만으로 접근 격리 — 정책상 alb-access-logs/*와 겹치지 않음).
+module "codebuild" {
+  source = "./modules/codebuild"
+
+  prefix             = local.prefix
+  region             = var.region
+  source_bucket_name = module.alb.access_logs_bucket
+}
+
 module "waf" {
   source = "./modules/waf"
 
@@ -171,4 +183,8 @@ module "monitoring" {
   alb_logs_bucket           = module.alb.access_logs_bucket
   waf_log_group             = module.waf.log_group_name
   node_asg_names            = module.eks.node_asg_names
+  apps_node_asg_names       = module.eks.apps_node_asg_names
+  stress_node_asg_name      = module.eks.stress_node_asg_name
+  nat_gateway_ids           = module.vpc.nat_gateway_ids
+  codebuild_project_name    = module.codebuild.project_name
 }

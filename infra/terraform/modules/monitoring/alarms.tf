@@ -75,6 +75,23 @@ resource "aws_cloudwatch_metric_alarm" "latency" {
   }
 }
 
+resource "aws_cloudwatch_metric_alarm" "rds_connections" {
+  alarm_name          = "${var.prefix}-rds-connections-80pct"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  threshold           = 160 # max_connections=200의 80%
+  period              = 60
+  statistic           = "Average"
+  namespace           = "AWS/RDS"
+  metric_name         = "DatabaseConnections"
+  treat_missing_data  = "notBreaching"
+  alarm_description   = "DB 커넥션이 max_connections(200)의 80%를 초과 (풀 고갈 위험)"
+
+  dimensions = {
+    DBInstanceIdentifier = var.rds_identifier
+  }
+}
+
 resource "aws_cloudwatch_metric_alarm" "rds_cpu" {
   alarm_name          = "${var.prefix}-rds-cpu-high"
   comparison_operator = "GreaterThanThreshold"

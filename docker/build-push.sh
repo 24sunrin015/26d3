@@ -1,22 +1,47 @@
 #!/usr/bin/env bash
-# provided/ 바이너리를 이미지로 빌드해 ECR에 푸시. 노드가 amd64이므로 --platform 고정.
+# provided/ 바이너리 + docker/Dockerfile을 zip으로 묶어 S3에 올리고
+# CodeBuild가 이미지를 빌드해 ECR에 푸시하도록 트리거한다.
+# 로컬 Docker 불필요(현장에서 로컬 Docker 사용이 어려운 상황 대응, EC2 빌드 인스턴스도 안 씀).
 set -euo pipefail
 
 TF_DIR="${TF_DIR:-infra/terraform}"
 APPS=(user product stress)
 
-REGION="$(terraform -chdir="$TF_DIR" output -raw region)"
-ACCOUNT="$(aws sts get-caller-identity --query Account --output text)"
-REGISTRY="${ACCOUNT}.dkr.ecr.${REGION}.amazonaws.com"
-
-echo "==> ECR 로그인 ($REGISTRY)"
-aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRY"
+tf() { terraform -chdir="$TF_DIR" output -raw "$1"; }
 
 for app in "${APPS[@]}"; do
   test -f "provided/$app" || { echo "provided/$app 바이너리가 없습니다"; exit 1; }
-  url="$(terraform -chdir="$TF_DIR" output -json ecr_repository_urls | jq -r ".$app")"
-  echo "==> build & push: $app → $url:latest"
-  docker build --platform linux/amd64 -f docker/Dockerfile --build-arg "APP=$app" -t "$url:latest" .
-  docker push "$url:latest"
 done
-echo "==> images done"
+
+BUCKET="$(tf codebuild_source_bucket)"
+KEY="$(tf codebuild_source_key)"
+PROJECT="$(tf codebuild_project_name)"
+
+WORKDIR="$(mktemp -d)"
+trap 'rm -rf "$WORKDIR"' EXIT
+ZIP="$WORKDIR/source.zip"
+
+echo "==> 소스 압축: docker/Dockerfile + provided/{${APPS[*]}}"
+zip -q "$ZIP" docker/Dockerfile "${APPS[@]/#/provided/}"
+
+echo "==> S3 업로드 (s3://$BUCKET/$KEY)"
+aws s3 cp "$ZIP" "s3://$BUCKET/$KEY" --only-show-errors
+
+echo "==> CodeBuild 시작 ($PROJECT)"
+BUILD_ID="$(aws codebuild start-build --project-name "$PROJECT" --query 'build.id' --output text)"
+echo "    build id: $BUILD_ID"
+
+STATUS="IN_PROGRESS"
+while [[ "$STATUS" == "IN_PROGRESS" ]]; do
+  sleep 5
+  STATUS="$(aws codebuild batch-get-builds --ids "$BUILD_ID" --query 'builds[0].buildStatus' --output text)"
+  echo "    status: $STATUS"
+done
+
+if [[ "$STATUS" != "SUCCEEDED" ]]; then
+  echo "==> 빌드 실패($STATUS). 로그:"
+  aws codebuild batch-get-builds --ids "$BUILD_ID" \
+    --query 'builds[0].logs.{group:groupName,stream:streamName,link:deepLink}' --output table
+  exit 1
+fi
+echo "==> images done (CodeBuild)"

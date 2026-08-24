@@ -4,6 +4,7 @@ set -euo pipefail
 
 TF_DIR="${TF_DIR:-infra/terraform}"
 OVL="${OVL:-infra/k8s/overlays/prod}"
+RESTART="${RESTART:-true}"
 : "${STUDENT_ID:?STUDENT_ID(비번호)가 필요합니다}"
 
 tf()     { terraform -chdir="$TF_DIR" output -raw "$1"; }
@@ -58,6 +59,11 @@ done
 
 echo "==> kubectl apply -k $OVL"
 kubectl apply -k "$OVL"
+
+if [[ "$RESTART" == "true" ]]; then
+  echo "==> rollout restart (재배포 시 새 이미지 강제 pull)"
+  kubectl -n default rollout restart deployment/user deployment/product deployment/stress
+fi
 
 echo "==> rollout 대기"
 kubectl -n default rollout status deploy/user --timeout=180s

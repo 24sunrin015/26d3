@@ -44,8 +44,17 @@
 - **비용 판단**: `kubectl top nodes`로 stress 노드가 계속 포화면 length가 흉악한 것 → 3노드 허용(cost 2점 손실 < stress 5점 방어, §5). 순하면 2노드 유지.
 - user/product는 sleep이라 CPU ~0 → 스케일 불필요, 노드 A 1대 고정.
 
+## 이미지 빌드 (CodeBuild, 로컬 Docker 불필요)
+
+`make images`는 로컬 `docker build`를 쓰지 않는다. `provided/*` + `docker/Dockerfile`을 zip으로 묶어 S3(ALB 로그 버킷의 `build-src/` 프리픽스 재사용)에 올리고, CodeBuild(`${prefix}-image-build`)가 그 zip을 받아 빌드해 ECR에 푸시한다. 현장에서 로컬 Docker를 쓰기 어렵거나 EC2 빌드 인스턴스를 따로 못 띄우는 상황 대응.
+
+- **`docker/build-push.sh`가 실패(status != SUCCEEDED)**: 스크립트가 CloudWatch 로그 그룹/스트림을 표로 찍어준다. `aws logs tail /aws/codebuild/<prefix>-image-build --since 15m`로 실제 에러 확인. 대부분 ECR 로그인 실패(IAM) 아니면 base image(`public.ecr.aws/amazonlinux/amazonlinux:2023`) pull 실패(네트워크).
+- **push 시 `ecr:PutImage` AccessDenied**: CodeBuild IAM 정책이 `${prefix}-*` 리포지토리만 허용한다. ECR repo 이름이 `${prefix}-<app>` 규칙을 안 따르면(수동 생성 등) 막힌다.
+- **zip에 없는 앱은 그냥 스킵됨, 있는데 ECR repo가 없으면 push 단계에서 실패**: buildspec은 `provided/*`를 순회하며 자동으로 앱을 찾는다(하드코딩 없음) — 새 바이너리는 `docker/build-push.sh`의 `APPS=(...)` 배열에 이름 추가 + ecr 모듈 `repos`에 이름 추가 + `make apply` 후 `make images`만 하면 됨. buildspec/CodeBuild 리소스 자체는 안 건드려도 됨(IAM도 prefix 와일드카드라 자동 커버).
+- **빌드 자체가 안 뜬다(`start-build` 실패)**: S3에 zip이 아직 없거나(`aws s3 ls s3://<bucket>/build-src/`), `codebuild_project_name`/`codebuild_source_bucket` output이 비어있으면(=아직 apply 전) 발생.
+- **`make images`는 성공했는데 앱이 안 바뀐다**: 이미지 태그가 항상 `latest` 고정이라 `kubectl apply -k`만으로는 Deployment 스펙 문자열이 안 바뀌어서 기존 Pod가 재생성되지 않는다(=새로 push한 이미지를 다시 pull하지 않음). `make deploy`(`infra/k8s/scripts/deploy.sh`)가 apply 후 `kubectl rollout restart deployment/user deployment/product deployment/stress`를 자동으로 실행하므로, **재배포 때도 반드시 `make deploy`로 실행**(kubectl apply만 따로 치지 말 것).
+
 ## 기타
 
-- **빌드 아키텍처**: 노드는 amd64. `build-push.sh`가 `--platform linux/amd64` 고정. mac(arm64)에서 빌드해도 OK.
 - **aws provider**: 공식 모듈(eks/iam 5.x) 제약으로 `~> 5.95` 고정. 6.x로 올리면 init 실패.
 - **엔드포인트 제출 형식**: 프로토콜+주소만(`https://xxx.cloudfront.net`), 경로 금지. `make endpoint` 출력 그대로.
