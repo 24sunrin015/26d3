@@ -4,21 +4,31 @@
 ## 3과제 issues
 1. 
 
-## Infra apply 전 할 일
-1. provided/ 디렉토리에 지급파일 배치. 이름 가능하면 똑같게.
-2. infra/terraform/rds/tables/*.sql 파일들 현장 지급파일이랑 똑같이 맞추거나, 없애기.
-3. (바이너리 확인) ./product --help로 S3 bucket env key 확인해서 configmap 수정해서 반영하기
-4. (바이너리 확인) product binary가 s3 어떤 path에 image upload 하는지 보고, cf s3 경로 조절하기.
+## 바이너리 분석 체크
+
+지급 직후 user와 product 바이너리를 `analysis.serve.cx/ang`으로 분석해 둔다. 아래는 apply 전에 확인한다.
+
+- product가 읽는 S3 bucket 환경변수 이름
+- 이미지 object key의 prefix와 CloudFront `/images/*` 경로 정합성
+- 이미지 수정(PUT) 때 기존 object를 덮어쓰는지, 새 object를 만드는지
+- 이미지 업로드 형식과 대략적인 요청 크기
+- user/product GET에 요청별 sleep 또는 반복되는 tail latency가 있는지
+
+분석 결과에 따라 `config.env` 생성값, S3/CloudFront 경로, `EXTRA_APPS`, DB dump 파일을 맞춘다. dump가 없거나 테이블 정의가 달라지면 `infra/terraform/rds/tables/*.sql`도 지급물 기준으로 고치거나 제거한다.
+
+GET에 독립적인 sleep이나 tail latency가 확인되면 hedger를 유지한다. 그런 지연이 없고 짧은 부하 확인에서도 GET이 안정적으로 0.2초 안에 끝나면 hedger는 이득이 없으므로 ALB GET hedge rule과 hedger 배포를 빼는 쪽이 낫다.
 
 ## 현장에서 풀이 순서
-모든건 Makefile로 작업 가능. 그니까 뭔 일 없으면 걍 make cmd ㄱㄱ.
-1. `export STUDENT_ID=<비번호>`로 비번호 설정.
-2. `make apply` — 인프라 전체(VPC/EKS/RDS/S3/ECR/ALB/WAF/CloudFront/monitoring) + 클러스터 애드온(LB Controller·Cluster Autoscaler·metrics-server, helm_release로 apply 때 같이 설치됨).
-3. `make images` — provided/ 바이너리를 S3에 올려 CodeBuild가 빌드 → ECR 푸시(로컬 Docker 불필요).
-4. `make deploy` — 앱 배포(kubectl apply -k). TargetGroupBinding으로 ALB 연결.
-5. `make db-seed ARGS="--user-dump=provided/load_user.dump"` — 덤프를 RDS에 적재(+ 커버링 인덱스 복구·ANALYZE). apply 때 자동 적재 안 함. product 덤프도 있으면 `--product-dump=provided/<파일>` 추가. 준 것만 적재하고, 안 주면 그 테이블은 안 건드림(덤프 없으면 생략).
-6. (opt) `make upload-images` — 제공 이미지 S3 업로드. 만약 pre 제공이미지 없다면 업로드 진행 X
-7. `make endpoint` — 채점 플랫폼에 제출할 단일 엔드포인트 출력.
+1. `provided/`에 user, product, stress 바이너리와 dump·이미지 지급물을 넣는다.
+2. user/product 분석을 시작하고, 위 체크 항목에 맞춰 IaC와 지급물을 조정한다. 추가 서비스가 있으면 `EXTRA_APPS`도 이 단계에서 설정한다.
+3. 작업 환경을 정한다. PowerShell만으로는 Makefile과 Bash 스크립트를 실행할 수 없으므로 Windows에서는 WSL 또는 Git Bash를 쓴다. 앱과 hedger 이미지는 CodeBuild가 빌드하므로 로컬 Go·Docker는 필요 없다.
+4. `export STUDENT_ID=<비번호>`로 비번호를 설정한다.
+5. `make apply` — VPC/EKS/RDS/S3/ECR/ALB/WAF/CloudFront와 클러스터 애드온을 반영한다.
+6. `make images` — 지급 바이너리와 hedger를 CodeBuild로 빌드해 ECR에 push한다.
+7. `make deploy` — Kubernetes 앱과 TargetGroupBinding을 적용한다.
+8. `make db-seed ARGS="--user-dump=provided/load_user.dump"` — dump를 RDS에 적재한다. product dump도 있으면 `--product-dump=provided/<파일>`을 추가하고, 없으면 생략한다.
+9. 제공 이미지가 있으면 `make upload-images`를 실행한다.
+10. `make endpoint`로 채점 플랫폼에 제출할 주소를 확인한다.
 
 ```bash
 export STUDENT_ID=<비번호>   # 안 하면 모든 make가 막힘
