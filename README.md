@@ -33,6 +33,29 @@ make endpoint
 make down        # 전체 철거 (terraform destroy)
 ```
 
+## 추가 바이너리 대응
+
+추가 Go 바이너리가 나오지 않으면 `EXTRA_APPS`를 설정하지 않는다. 기존 순서 그대로 진행하면 된다.
+
+추가 바이너리 `orders`가 나오고 API 경로가 `/v1/orders`라면:
+
+```bash
+cp <지급경로>/orders provided/orders
+export EXTRA_APPS=orders
+
+make apply     # apdev-orders ECR, ALB /v1/orders, target group 생성
+make images    # provided/orders 빌드·ECR push
+make deploy    # orders Deployment, Service, TargetGroupBinding 적용
+```
+
+여러 개면 이름을 쉼표로 연결한다.
+
+```bash
+export EXTRA_APPS=orders,payment
+```
+
+이름은 소문자·숫자·하이픈만 쓸 수 있고 23자 이하여야 한다. 추가 바이너리는 TCP/8080과 `/healthcheck`를 제공해야 한다.
+
 ## 동작 확인용 curl 예시
 
 ```bash
