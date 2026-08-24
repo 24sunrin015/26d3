@@ -13,7 +13,7 @@ export TF_VAR_enable_hedger := $(HEDGE_ENABLED)
 export EXTRA_APPS HEDGE_ENABLED
 
 .PHONY: check-id check-bin up down init plan apply destroy fmt validate \
-        images deploy deploy-shared k8s k8s-down endpoint upload-images db-seed
+         images deploy deploy-shared k8s k8s-down endpoint upload-images db-seed stress-scale
 
 # ── 이중 blocker (현장 사고 방지) ─────────────────────────────
 check-id:
@@ -86,6 +86,9 @@ db-seed: check-id
 # 제공 이미지 대량 업로드 (S3). 소스 기본값 provided/images
 upload-images: check-id
 	bash scripts/upload_images.sh
+
+stress-scale: check-id
+	bash scripts/stress-scale.sh
 
 # 제출용 단일 엔드포인트 출력
 endpoint:

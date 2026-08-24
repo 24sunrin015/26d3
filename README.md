@@ -26,6 +26,20 @@ HEDGE_ENABLED=false make deploy
 
 `HEDGE_ENABLED=false`면 hedger ECR·ALB target group·GET listener rule·Kubernetes Deployment/Service/TargetGroupBinding을 만들지 않으며, user/product GET은 각 앱 target group으로 바로 간다. 기본값은 `true`다.
 
+## stress 수동 스케일
+
+트래픽이 시작되기 2분 전에 2대로 올린다. 명령은 stress ASG와 HPA를 함께 2로 고정하고, stress 노드·Pod·ALB target이 모두 2개 Ready/healthy가 될 때까지 최대 120초 기다린다.
+
+```bash
+STRESS_NODES=2 make stress-scale
+```
+
+트래픽이 끝나면 1대로 내린다. HPA를 1개로 고정하고 CA가 비어 있는 stress 노드를 drain한 뒤 축소한다. 이때 `make apply`를 다시 실행하지 않는다.
+
+```bash
+STRESS_NODES=1 make stress-scale
+```
+
 ## 현장에서 풀이 순서
 1. `provided/`에 user, product, stress 바이너리와 dump·이미지 지급물을 넣는다.
 2. user/product 분석을 시작하고, 위 체크 항목에 맞춰 IaC와 지급물을 조정한다. 추가 서비스가 있으면 `EXTRA_APPS`도 이 단계에서 설정한다.

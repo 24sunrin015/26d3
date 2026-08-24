@@ -76,6 +76,10 @@ output "target_group_arns" {
   value       = module.alb.target_group_arns
 }
 
+output "stress_node_asg_name" {
+  value = module.eks.stress_node_asg_name
+}
+
 output "hedger_target_group_arn" {
   description = "hedger 타겟그룹 ARN (TargetGroupBinding용)"
   value       = module.alb.hedger_target_group_arn
