@@ -6,7 +6,7 @@
 
 ## 바이너리 분석 체크
 
-지급 직후 user와 product 바이너리를 `analysis.serve.cx/ang`으로 분석해 둔다. 아래는 apply 전에 확인한다.
+지급 직후 user와 product 바이너리를 `analysis.serve.cx`으로 분석해 둔다. 아래는 apply 전에 확인한다.
 
 - product가 읽는 S3 bucket 환경변수 이름
 - 이미지 object key의 prefix와 CloudFront `/images/*` 경로 정합성
