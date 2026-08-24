@@ -80,6 +80,26 @@ resource "aws_lb_target_group" "app" {
   deregistration_delay = 15
 }
 
+resource "aws_lb_target_group" "hedger" {
+  name        = "${var.prefix}-hedger-tg"
+  port        = 8080
+  protocol    = "HTTP"
+  target_type = "ip"
+  vpc_id      = var.vpc_id
+
+  health_check {
+    path                = "/healthcheck"
+    port                = "traffic-port"
+    healthy_threshold   = 2
+    unhealthy_threshold = 3
+    timeout             = 3
+    interval            = 10
+    matcher             = "200"
+  }
+
+  deregistration_delay = 15
+}
+
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80
@@ -111,6 +131,30 @@ resource "aws_lb_listener_rule" "app" {
   condition {
     path_pattern {
       values = ["/v1/${each.key}", "/v1/${each.key}/*"]
+    }
+  }
+}
+
+resource "aws_lb_listener_rule" "hedged_get" {
+  for_each = toset(["user", "product"])
+
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 6 + index(["user", "product"], each.key)
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.hedger.arn
+  }
+
+  condition {
+    path_pattern {
+      values = ["/v1/${each.key}"]
+    }
+  }
+
+  condition {
+    http_request_method {
+      values = ["GET"]
     }
   }
 }

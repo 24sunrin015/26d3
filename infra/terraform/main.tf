@@ -96,7 +96,7 @@ module "ecr" {
   source = "./modules/ecr"
 
   prefix = local.prefix
-  repos  = ["user", "product", "stress"]
+  repos  = ["user", "product", "stress", "hedger"]
 }
 
 module "rds" {

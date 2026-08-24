@@ -107,6 +107,8 @@ resource "aws_codebuild_project" "image_build" {
                 docker build --platform linux/amd64 -f docker/Dockerfile --build-arg APP="$app" -t "$repo:latest" .
                 docker push "$repo:latest"
               done
+            - docker build --platform linux/amd64 -t "$ECR_REGISTRY/${var.prefix}-hedger:latest" apps/hedger
+            - docker push "$ECR_REGISTRY/${var.prefix}-hedger:latest"
     YAML
   }
 

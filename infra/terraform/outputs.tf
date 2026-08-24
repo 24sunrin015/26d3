@@ -22,7 +22,7 @@ output "vpc_id" {
 }
 
 output "ecr_repository_urls" {
-  description = "user/product/stress ECR URL"
+  description = "user/product/stress/hedger ECR URL"
   value       = module.ecr.repository_urls
 }
 
@@ -74,6 +74,11 @@ output "s3_bucket" {
 output "target_group_arns" {
   description = "user/product/stress 타겟그룹 ARN (TargetGroupBinding용)"
   value       = module.alb.target_group_arns
+}
+
+output "hedger_target_group_arn" {
+  description = "hedger 타겟그룹 ARN (TargetGroupBinding용)"
+  value       = module.alb.hedger_target_group_arn
 }
 
 output "app_s3_role_arn" {

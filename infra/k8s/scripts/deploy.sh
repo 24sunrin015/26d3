@@ -26,9 +26,11 @@ BUCKET="$(tf s3_bucket)"
 ECR_USER="$(tfjson ecr_repository_urls | jq -r .user)"
 ECR_PRODUCT="$(tfjson ecr_repository_urls | jq -r .product)"
 ECR_STRESS="$(tfjson ecr_repository_urls | jq -r .stress)"
+ECR_HEDGER="$(tfjson ecr_repository_urls | jq -r .hedger)"
 TG_USER="$(tfjson target_group_arns | jq -r .user)"
 TG_PRODUCT="$(tfjson target_group_arns | jq -r .product)"
 TG_STRESS="$(tfjson target_group_arns | jq -r .stress)"
+TG_HEDGER="$(tf hedger_target_group_arn)"
 PRODUCT_ROLE_ARN="$(tf app_s3_role_arn)"
 
 echo "==> config.env / secret.env 생성"
@@ -49,7 +51,7 @@ MYSQL_PASSWORD=$DBPASS
 EOF
 
 echo "==> 템플릿 렌더 (kustomization / targetgroupbindings / sa-patch)"
-export ECR_USER ECR_PRODUCT ECR_STRESS TG_USER TG_PRODUCT TG_STRESS PRODUCT_ROLE_ARN
+export ECR_USER ECR_PRODUCT ECR_STRESS ECR_HEDGER TG_USER TG_PRODUCT TG_STRESS TG_HEDGER PRODUCT_ROLE_ARN
 render() {
   python3 -c 'import os,sys,re; s=open(sys.argv[1]).read(); sys.stdout.write(re.sub(r"\$\{(\w+)\}", lambda m: os.environ.get(m.group(1),""), s))' "$1"
 }
@@ -62,11 +64,12 @@ kubectl apply -k "$OVL"
 
 if [[ "$RESTART" == "true" ]]; then
   echo "==> rollout restart (재배포 시 새 이미지 강제 pull)"
-  kubectl -n default rollout restart deployment/user deployment/product deployment/stress
+  kubectl -n default rollout restart deployment/hedger deployment/user deployment/product deployment/stress
 fi
 
 echo "==> rollout 대기"
 kubectl -n default rollout status deploy/user --timeout=180s
 kubectl -n default rollout status deploy/product --timeout=180s
 kubectl -n default rollout status deploy/stress --timeout=180s
+kubectl -n default rollout status deploy/hedger --timeout=180s
 echo "==> deploy done"

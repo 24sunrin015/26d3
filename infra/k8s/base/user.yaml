@@ -27,8 +27,8 @@ spec:
             - configMapRef: { name: app-config }
             - secretRef: { name: app-secret }
           resources:
-            requests: { cpu: 256m, memory: 512Mi }
-            limits: { cpu: 512m, memory: 512Mi }
+            requests: { cpu: 256m, memory: 256Mi }
+            limits: { cpu: 512m, memory: 256Mi }
           readinessProbe:
             httpGet: { path: /healthcheck, port: http }
             initialDelaySeconds: 3

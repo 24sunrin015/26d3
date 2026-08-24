@@ -231,6 +231,69 @@ resource "aws_wafv2_web_acl" "main" {
     }
   }
 
+  rule {
+    name     = "UserGetEmailValidation"
+    priority = 41
+    action {
+      block {}
+    }
+    statement {
+      and_statement {
+        statement {
+          byte_match_statement {
+            search_string         = "/v1/user"
+            positional_constraint = "EXACTLY"
+            field_to_match {
+              uri_path {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "LOWERCASE"
+            }
+          }
+        }
+        statement {
+          byte_match_statement {
+            search_string         = "get"
+            positional_constraint = "EXACTLY"
+            field_to_match {
+              method {}
+            }
+            text_transformation {
+              priority = 0
+              type     = "LOWERCASE"
+            }
+          }
+        }
+        statement {
+          not_statement {
+            statement {
+              regex_pattern_set_reference_statement {
+                arn = aws_wafv2_regex_pattern_set.email_query_pattern.arn
+                field_to_match {
+                  query_string {}
+                }
+                text_transformation {
+                  priority = 0
+                  type     = "URL_DECODE"
+                }
+                text_transformation {
+                  priority = 1
+                  type     = "LOWERCASE"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "UserGetEmailValidation"
+      sampled_requests_enabled   = true
+    }
+  }
+
   # --- 커스텀 50: 악성 User-Agent 차단 (정상 aiohttp/curl 제외) ---
   rule {
     name     = "BlockedUserAgents"
@@ -280,6 +343,15 @@ resource "aws_wafv2_regex_pattern_set" "email_pattern" {
   # body에 유효한 이메일이 존재하는지 검사 (없으면 위 not_statement로 차단→403)
   regular_expression {
     regex_string = "\"email\"\\s*:\\s*\"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}\""
+  }
+}
+
+resource "aws_wafv2_regex_pattern_set" "email_query_pattern" {
+  name  = "${var.prefix}-email-query-pattern"
+  scope = "REGIONAL"
+
+  regular_expression {
+    regex_string = "(^|&)email=[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}(&|$)"
   }
 }
 

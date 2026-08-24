@@ -54,7 +54,7 @@ locals {
       {
         type = "metric", x = 12, y = 12, width = 12, height = 6,
         properties = {
-          title = "CloudFront vs ALB 요청수 (캐시 오프로드 확인)", view = "timeSeries", period = 60, stat = "Sum",
+          title = "CloudFront vs ALB 요청수 (캐시 오프로드 확인)", view = "timeSeries", period = 60, stat = "Sum", region = var.region,
           metrics = [
             ["AWS/CloudFront", "Requests", "DistributionId", var.distribution_id, "Region", "Global", { label = "CF requests", region = "us-east-1" }],
             ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", var.alb_arn_suffix, { label = "ALB requests(origin 도달)", region = var.region }],

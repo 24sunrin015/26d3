@@ -21,8 +21,8 @@ WORKDIR="$(mktemp -d)"
 trap 'rm -rf "$WORKDIR"' EXIT
 ZIP="$WORKDIR/source.zip"
 
-echo "==> 소스 압축: docker/Dockerfile + provided/{${APPS[*]}}"
-zip -q "$ZIP" docker/Dockerfile "${APPS[@]/#/provided/}"
+echo "==> 소스 압축: 앱 바이너리와 hedger 소스"
+zip -q -r "$ZIP" docker/Dockerfile apps/hedger "${APPS[@]/#/provided/}"
 
 echo "==> S3 업로드 (s3://$BUCKET/$KEY)"
 aws s3 cp "$ZIP" "s3://$BUCKET/$KEY" --only-show-errors
