@@ -16,7 +16,15 @@
 
 분석 결과에 따라 `config.env` 생성값, S3/CloudFront 경로, `EXTRA_APPS`, DB dump 파일을 맞춘다. dump가 없거나 테이블 정의가 달라지면 `infra/terraform/rds/tables/*.sql`도 지급물 기준으로 고치거나 제거한다.
 
-GET에 독립적인 sleep이나 tail latency가 확인되면 hedger를 유지한다. 그런 지연이 없고 짧은 부하 확인에서도 GET이 안정적으로 0.2초 안에 끝나면 hedger는 이득이 없으므로 ALB GET hedge rule과 hedger 배포를 빼는 쪽이 낫다.
+GET에 독립적인 sleep이나 tail latency가 확인되면 hedger를 유지한다. 그런 지연이 없고 짧은 부하 확인에서도 GET이 안정적으로 0.2초 안에 끝나면 hedger는 이득이 없으므로 끈다.
+
+```bash
+HEDGE_ENABLED=false make apply
+HEDGE_ENABLED=false make images
+HEDGE_ENABLED=false make deploy
+```
+
+`HEDGE_ENABLED=false`면 hedger ECR·ALB target group·GET listener rule·Kubernetes Deployment/Service/TargetGroupBinding을 만들지 않으며, user/product GET은 각 앱 target group으로 바로 간다. 기본값은 `true`다.
 
 ## 현장에서 풀이 순서
 1. `provided/`에 user, product, stress 바이너리와 dump·이미지 지급물을 넣는다.

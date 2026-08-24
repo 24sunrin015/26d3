@@ -1,0 +1,10 @@
+apiVersion: elbv2.k8s.aws/v1beta1
+kind: TargetGroupBinding
+metadata:
+  name: hedger
+spec:
+  serviceRef:
+    name: hedger
+    port: 8080
+  targetGroupARN: ${TG_HEDGER}
+  targetType: ip

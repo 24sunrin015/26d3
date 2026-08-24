@@ -1,12 +1,16 @@
+SHELL := /bin/bash
+
 INFRA_DIR   := infra/terraform
 K8S_OVERLAY := infra/k8s/overlays/prod
 PROVIDED    := provided
 BINARIES    := user product stress
 EXTRA_APPS ?=
+HEDGE_ENABLED ?= true
 
 export TF_VAR_student_id := $(STUDENT_ID)
 export TF_VAR_additional_apps := $(shell EXTRA_APPS='$(EXTRA_APPS)' python3 -c 'import json,os; print(json.dumps([x for x in os.environ["EXTRA_APPS"].split(",") if x]))')
-export EXTRA_APPS
+export TF_VAR_enable_hedger := $(HEDGE_ENABLED)
+export EXTRA_APPS HEDGE_ENABLED
 
 .PHONY: check-id check-bin up down init plan apply destroy fmt validate \
         images deploy deploy-shared k8s k8s-down endpoint upload-images db-seed

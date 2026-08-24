@@ -81,6 +81,8 @@ resource "aws_lb_target_group" "app" {
 }
 
 resource "aws_lb_target_group" "hedger" {
+  for_each = var.enable_hedger ? toset(["hedger"]) : toset([])
+
   name        = "${var.prefix}-hedger-tg"
   port        = 8080
   protocol    = "HTTP"
@@ -98,6 +100,11 @@ resource "aws_lb_target_group" "hedger" {
   }
 
   deregistration_delay = 15
+}
+
+moved {
+  from = aws_lb_target_group.hedger
+  to   = aws_lb_target_group.hedger["hedger"]
 }
 
 resource "aws_lb_listener" "http" {
@@ -136,14 +143,14 @@ resource "aws_lb_listener_rule" "app" {
 }
 
 resource "aws_lb_listener_rule" "hedged_get" {
-  for_each = toset(["user", "product"])
+  for_each = var.enable_hedger ? toset(["user", "product"]) : toset([])
 
   listener_arn = aws_lb_listener.http.arn
   priority     = 6 + index(["user", "product"], each.key)
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.hedger.arn
+    target_group_arn = aws_lb_target_group.hedger["hedger"].arn
   }
 
   condition {

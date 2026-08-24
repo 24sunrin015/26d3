@@ -15,7 +15,7 @@ output "target_group_arn_suffixes" {
 }
 
 output "hedger_target_group_arn" {
-  value = aws_lb_target_group.hedger.arn
+  value = var.enable_hedger ? aws_lb_target_group.hedger["hedger"].arn : null
 }
 output "access_logs_bucket" {
   value = aws_s3_bucket.logs.id

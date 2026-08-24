@@ -15,3 +15,7 @@ variable "additional_apps" {
   type    = list(string)
   default = []
 }
+
+variable "enable_hedger" {
+  type = bool
+}

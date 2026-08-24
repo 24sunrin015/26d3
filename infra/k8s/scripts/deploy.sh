@@ -5,7 +5,13 @@ set -euo pipefail
 TF_DIR="${TF_DIR:-infra/terraform}"
 OVL="${OVL:-infra/k8s/overlays/prod}"
 RESTART="${RESTART:-true}"
+HEDGE_ENABLED="${HEDGE_ENABLED:-true}"
 : "${STUDENT_ID:?STUDENT_ID(비번호)가 필요합니다}"
+
+case "$HEDGE_ENABLED" in
+  true|false) ;;
+  *) echo "HEDGE_ENABLED는 true 또는 false여야 합니다"; exit 1 ;;
+esac
 
 tf()     { terraform -chdir="$TF_DIR" output -raw "$1"; }
 tfjson() { terraform -chdir="$TF_DIR" output -json "$1"; }
@@ -26,14 +32,19 @@ BUCKET="$(tf s3_bucket)"
 ECR_USER="$(tfjson ecr_repository_urls | jq -r .user)"
 ECR_PRODUCT="$(tfjson ecr_repository_urls | jq -r .product)"
 ECR_STRESS="$(tfjson ecr_repository_urls | jq -r .stress)"
-ECR_HEDGER="$(tfjson ecr_repository_urls | jq -r .hedger)"
 ECR_APPS="$(tfjson ecr_repository_urls)"
 TG_USER="$(tfjson target_group_arns | jq -r .user)"
 TG_PRODUCT="$(tfjson target_group_arns | jq -r .product)"
 TG_STRESS="$(tfjson target_group_arns | jq -r .stress)"
-TG_HEDGER="$(tf hedger_target_group_arn)"
 TG_APPS="$(tfjson target_group_arns)"
 PRODUCT_ROLE_ARN="$(tf app_s3_role_arn)"
+
+if [[ "$HEDGE_ENABLED" == "true" ]]; then
+  ECR_HEDGER="$(jq -r .hedger <<< "$ECR_APPS")"
+  TG_HEDGER="$(tf hedger_target_group_arn)"
+else
+  ECR_HEDGER="hedger-app"
+fi
 
 EXTRA_DEPLOYMENTS=()
 if [[ -n "${EXTRA_APPS:-}" ]]; then
@@ -69,6 +80,19 @@ for t in kustomization targetgroupbindings sa-patch; do
   render "$OVL/$t.yaml.tmpl" > "$OVL/$t.yaml"
 done
 
+if [[ "$HEDGE_ENABLED" == "true" ]]; then
+  cp infra/k8s/base/hedger.yaml "$OVL/hedger-resource.yaml"
+  render "$OVL/hedger-targetgroupbinding.yaml.tmpl" > "$OVL/hedger-targetgroupbinding.yaml"
+else
+  cat > "$OVL/hedger-resource.yaml" <<EOF
+apiVersion: v1
+kind: List
+items: []
+EOF
+  cp "$OVL/hedger-resource.yaml" "$OVL/hedger-targetgroupbinding.yaml"
+  kubectl -n default delete deployment,service,targetgroupbinding hedger --ignore-not-found
+fi
+
 if [[ ${#EXTRA_DEPLOYMENTS[@]} -eq 0 ]]; then
   cat > "$OVL/extra-apps.yaml" <<EOF
 apiVersion: v1
@@ -83,6 +107,7 @@ items:
 EOF
 fi
 
+if [[ ${#EXTRA_DEPLOYMENTS[@]} -gt 0 ]]; then
 for app in "${EXTRA_DEPLOYMENTS[@]}"; do
   image="$(jq -r --arg app "$app" '.[$app] // empty' <<< "$ECR_APPS")"
   target_group_arn="$(jq -r --arg app "$app" '.[$app] // empty' <<< "$TG_APPS")"
@@ -150,21 +175,33 @@ spec:
   targetType: ip
 EOF
 done
+fi
 
 echo "==> kubectl apply -k $OVL"
 kubectl apply -k "$OVL"
 
 if [[ "$RESTART" == "true" ]]; then
   echo "==> rollout restart (재배포 시 새 이미지 강제 pull)"
-  kubectl -n default rollout restart deployment/hedger deployment/user deployment/product deployment/stress "${EXTRA_DEPLOYMENTS[@]}"
+  workloads=(deployment/user deployment/product deployment/stress)
+  if [[ ${#EXTRA_DEPLOYMENTS[@]} -gt 0 ]]; then
+    workloads+=("${EXTRA_DEPLOYMENTS[@]}")
+  fi
+  if [[ "$HEDGE_ENABLED" == "true" ]]; then
+    workloads=(deployment/hedger "${workloads[@]}")
+  fi
+  kubectl -n default rollout restart "${workloads[@]}"
 fi
 
 echo "==> rollout 대기"
 kubectl -n default rollout status deploy/user --timeout=180s
 kubectl -n default rollout status deploy/product --timeout=180s
 kubectl -n default rollout status deploy/stress --timeout=180s
-kubectl -n default rollout status deploy/hedger --timeout=180s
+if [[ "$HEDGE_ENABLED" == "true" ]]; then
+  kubectl -n default rollout status deploy/hedger --timeout=180s
+fi
+if [[ ${#EXTRA_DEPLOYMENTS[@]} -gt 0 ]]; then
 for app in "${EXTRA_DEPLOYMENTS[@]}"; do
   kubectl -n default rollout status "deploy/$app" --timeout=180s
 done
+fi
 echo "==> deploy done"

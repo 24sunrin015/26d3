@@ -69,6 +69,12 @@ variable "additional_apps" {
   }
 }
 
+variable "enable_hedger" {
+  description = "GET hedge proxy를 배포하고 user/product GET을 경유시킬지 여부. 지급 바이너리 분석 뒤 결정."
+  type        = bool
+  default     = true
+}
+
 # 노드그룹 2개 전략(operation-strategy §4): apps 고정 1대 + stress min1/max2.
 # 평시 2노드(baseline) → 피크 최대 3노드.
 variable "stress_node_max" {

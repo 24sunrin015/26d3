@@ -90,6 +90,11 @@ resource "aws_codebuild_project" "image_build" {
       name  = "APP_NAMES"
       value = join(" ", concat(["user", "product", "stress"], var.additional_apps))
     }
+
+    environment_variable {
+      name  = "ENABLE_HEDGER"
+      value = tostring(var.enable_hedger)
+    }
   }
 
   source {
@@ -112,8 +117,11 @@ resource "aws_codebuild_project" "image_build" {
                 docker build --platform linux/amd64 -f docker/Dockerfile --build-arg APP="$app" -t "$repo:latest" .
                 docker push "$repo:latest"
               done
-            - docker build --platform linux/amd64 -t "$ECR_REGISTRY/${var.prefix}-hedger:latest" apps/hedger
-            - docker push "$ECR_REGISTRY/${var.prefix}-hedger:latest"
+            - |
+              if [ "$ENABLE_HEDGER" = true ]; then
+                docker build --platform linux/amd64 -t "$ECR_REGISTRY/${var.prefix}-hedger:latest" apps/hedger
+                docker push "$ECR_REGISTRY/${var.prefix}-hedger:latest"
+              fi
     YAML
   }
 

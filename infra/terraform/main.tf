@@ -96,7 +96,7 @@ module "ecr" {
   source = "./modules/ecr"
 
   prefix = local.prefix
-  repos  = concat(["user", "product", "stress", "hedger"], var.additional_apps)
+  repos  = concat(["user", "product", "stress"], var.enable_hedger ? ["hedger"] : [], var.additional_apps)
 }
 
 module "rds" {
@@ -139,6 +139,7 @@ module "alb" {
   # ALB → 노드(8080)로의 트래픽 허용을 위해 노드 SG 참조
   node_sg_id      = module.eks.node_security_group_id
   additional_apps = var.additional_apps
+  enable_hedger   = var.enable_hedger
 }
 
 # 이미지 빌드(CodeBuild) — 로컬 Docker 없이 make images가 provided/를 zip으로
@@ -151,6 +152,7 @@ module "codebuild" {
   region             = var.region
   source_bucket_name = module.alb.access_logs_bucket
   additional_apps    = var.additional_apps
+  enable_hedger      = var.enable_hedger
 }
 
 module "waf" {
