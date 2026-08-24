@@ -2,8 +2,11 @@ INFRA_DIR   := infra/terraform
 K8S_OVERLAY := infra/k8s/overlays/prod
 PROVIDED    := provided
 BINARIES    := user product stress
+EXTRA_APPS ?=
 
 export TF_VAR_student_id := $(STUDENT_ID)
+export TF_VAR_additional_apps := $(shell EXTRA_APPS='$(EXTRA_APPS)' python3 -c 'import json,os; print(json.dumps([x for x in os.environ["EXTRA_APPS"].split(",") if x]))')
+export EXTRA_APPS
 
 .PHONY: check-id check-bin up down init plan apply destroy fmt validate \
         images deploy deploy-shared k8s k8s-down endpoint upload-images db-seed
@@ -17,7 +20,8 @@ endif
 	@echo "STUDENT_ID=$(STUDENT_ID)"
 
 check-bin:
-	@missing=""; for b in $(BINARIES); do \
+	@missing=""; for b in $(BINARIES) $${EXTRA_APPS//,/ }; do \
+		[[ "$$b" =~ ^[a-z][a-z0-9-]*$$ ]] || { echo "잘못된 EXTRA_APPS 이름: $$b"; exit 1; }; \
 		test -f "$(PROVIDED)/$$b" || missing="$$missing $$b"; \
 	done; \
 	if [ -n "$$missing" ]; then \

@@ -7,6 +7,14 @@ set -euo pipefail
 TF_DIR="${TF_DIR:-infra/terraform}"
 APPS=(user product stress)
 
+if [[ -n "${EXTRA_APPS:-}" ]]; then
+  IFS=',' read -r -a extras <<< "$EXTRA_APPS"
+  for app in "${extras[@]}"; do
+    [[ "$app" =~ ^[a-z][a-z0-9-]*$ ]] || { echo "잘못된 EXTRA_APPS 이름: $app"; exit 1; }
+    APPS+=("$app")
+  done
+fi
+
 tf() { terraform -chdir="$TF_DIR" output -raw "$1"; }
 
 for app in "${APPS[@]}"; do
