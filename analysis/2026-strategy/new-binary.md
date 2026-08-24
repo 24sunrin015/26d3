@@ -21,6 +21,23 @@ stress node group: t3.medium 1대, dedicated=stress:NoSchedule
 - 새 binary의 HPA max를 무심코 2 이상으로 두면 여유가 없는 경우 Pod가 Pending으로 남고, 그 Pod가 자동으로 노드를 늘려주지 않을 수 있다.
 - 비용 만점 목표는 트래픽 구간 평균 2노드다. apps를 한 대 더 고정하면 평시 3노드가 되어 cost ratio 약 1.5, 비용 점수는 10점 구간이다.
 
+### apdev-eks 실측 스냅샷
+
+`apdev-eks` apps node를 2026-08-22에 확인한 값이다. 배포 전에는 다시 조회하지만, 현재 값만 보면 새 binary의 `512m` request는 들어가지 않는다.
+
+| 항목 | 값 |
+| --- | ---: |
+| node allocatable CPU | 1930m |
+| 현재 Pod CPU requests | 1474m (76%) |
+| 새 Pod에 남은 schedulable CPU | **456m** |
+| node allocatable memory | 3371428Ki (약 3292Mi) |
+| 현재 Pod memory requests | 1364Mi (41%) |
+| 새 Pod에 남은 schedulable memory | 약 1928Mi |
+| Pod slots | 17개 중 10개 사용, 7개 남음 |
+| 실시간 node usage | CPU 126m (6%), memory 602Mi (18%) |
+
+스케줄러는 실시간 usage가 아니라 request를 본다. CPU 실사용이 6%여도 새 Pod request가 512m이면 `1474m + 512m > 1930m`라 Pending이다. 이 상태에서 request만 거짓으로 낮추면 apps node CPU 경합을 숨길 뿐이다.
+
 ## 0~10분: binary가 무엇을 요구하는지 확인
 
 ```bash
